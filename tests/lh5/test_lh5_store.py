@@ -605,6 +605,7 @@ def test_read_compressed_lgnd_waveform_table(lgnd_file, enc_lgnd_file):
     assert isinstance(wft.values, types.ArrayOfEqualSizedArrays)
     assert "compression" not in wft.values.attrs
 
+
 def test_read_histogram_testdata(lgnd_test_data):
     file = lgnd_test_data.get_path("lh5/lgdo-histograms.lh5")
 

@@ -6,8 +6,9 @@ import argparse
 import logging
 import sys
 
+import lgdo.logging as lgdogging  # eheheh
+
 from . import __version__, io
-from . import logging as lgdogging  # eheheh
 from .io.concat import lh5concat
 
 log = logging.getLogger(__name__)

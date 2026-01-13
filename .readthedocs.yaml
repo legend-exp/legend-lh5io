@@ -17,7 +17,7 @@ build:
     pre_build:
       - rm -rf docs/source/api
       - sphinx-apidoc --private --module-first --force --output-dir
-        docs/source/api src/lgdo src/lgdo/_version.py
+        docs/source/api src/lh5 src/lh5/_version.py
 
 python:
   install:

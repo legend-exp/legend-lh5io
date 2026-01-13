@@ -1,7 +1,7 @@
 LH5 Command Line Tools
 ======================
 
-*legend-pydataobj* provides some command line utilities to deal with LH5 files.
+*legend-lh5io* provides some command line utilities to deal with LH5 files.
 
 
 Inspecting LH5 files with ``lh5ls``

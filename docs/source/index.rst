@@ -1,35 +1,35 @@
 LEGEND Data Objects
 ===================
 
-|legend-pydataobj| is a Python implementation of the `LEGEND Data Format Specification <1_>`_.
+|legend-lh5io| is a Python implementation of the `LEGEND Data Format Specification <1_>`_.
 
 
 Getting started
 ---------------
 
-|legend-pydataobj| is published on the `Python Package Index <2_>`_. Install on
+|legend-lh5io| is published on the `Python Package Index <2_>`_. Install on
 local systems with `pip <3_>`_:
 
 .. tab:: Stable release
 
     .. code-block:: console
 
-        $ pip install legend-pydataobj
+        $ pip install legend-lh5io
 
 .. tab:: Unstable (``main`` branch)
 
     .. code-block:: console
 
-        $ pip install legend-pydataobj@git+https://github.com/legend-exp/legend-pydataobj@main
+        $ pip install legend-lh5io@git+https://github.com/legend-exp/legend-lh5io@main
 
 .. tab:: Linux Containers
 
-    Get a LEGEND container with |legend-pydataobj| pre-installed on `Docker hub
+    Get a LEGEND container with |legend-lh5io| pre-installed on `Docker hub
     <https://hub.docker.com/r/legendexp/legend-software>`_ or follow
     instructions on the `LEGEND wiki
     <https://legend-exp.atlassian.net/l/cp/nF1ww5KH>`_.
 
-If you plan to develop |legend-pydataobj|, refer to the :doc:`developer's guide
+If you plan to develop |legend-lh5io|, refer to the :doc:`developer's guide
 <developer>`.
 
 .. attention::
@@ -61,14 +61,14 @@ Next steps
    :maxdepth: 1
    :caption: Development
 
-   Source Code <https://github.com/legend-exp/legend-pydataobj>
-   License <https://github.com/legend-exp/legend-pydataobj/blob/main/LICENSE>
+   Source Code <https://github.com/legend-exp/legend-lh5io>
+   License <https://github.com/legend-exp/legend-lh5io/blob/main/LICENSE>
    Citation <https://doi.org/10.5281/zenodo.10592107>
-   Changelog <https://github.com/legend-exp/legend-pydataobj/releases>
+   Changelog <https://github.com/legend-exp/legend-lh5io/releases>
    developer
 
 
 .. _1: https://legend-exp.github.io/legend-data-format-specs
-.. _2: https://pypi.org/project/legend-pydataobj
+.. _2: https://pypi.org/project/legend-lh5io
 .. _3: https://pip.pypa.io/en/stable/getting-started
-.. |legend-pydataobj| replace:: *legend-pydataobj*
+.. |legend-lh5io| replace:: *legend-lh5io*

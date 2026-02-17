@@ -28,5 +28,6 @@ __all__ = [
     "read_n_rows",
     "reset_default_hdf5_settings",
     "show",
+    "truncate",
     "write",
 ]

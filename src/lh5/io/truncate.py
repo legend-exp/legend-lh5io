@@ -48,17 +48,46 @@ def map_lgdo_arrays(
         return None
     if isinstance(lgdo, WaveformTable):
         # before Table as WaveformTable inherits from Table
-        return WaveformTable(
-            t0=map_lgdo_arrays(func, lgdo.t0, name + "/t0"),  # Array
-            dt=map_lgdo_arrays(func, lgdo.dt, name + "/dt"),  # Array
-            values=map_lgdo_arrays(
-                func, lgdo.values, name + "/values"
-            ),  # AoesA (or VoV?)
-            attrs=lgdo.attrs,
-        )
+        t0 = map_lgdo_arrays(
+            func,
+            lgdo.t0,
+            name + "/t0",
+            include_list=include_list,
+            exclude_list=exclude_list,
+        )  # Array
+        dt = map_lgdo_arrays(
+            func,
+            lgdo.dt,
+            name + "/dt",
+            include_list=include_list,
+            exclude_list=exclude_list,
+        )  # Array
+        values = map_lgdo_arrays(
+            func,
+            lgdo.values,
+            name + "/values",
+            include_list=include_list,
+            exclude_list=exclude_list,
+        )  # AoesA (or VoV?)
+        # WaveformTable is treated as all-or-nothing: if any component is excluded,
+        # drop the entire WaveformTable.
+        if t0 is None or dt is None or values is None:
+            msg = (
+                f"WaveformTable at {name} excluded due to include/exclude rules "
+                f"(t0={t0 is not None}, dt={dt is not None}, values={values is not None})"
+            )
+            log.debug(msg)
+            return None
+        return WaveformTable(t0=t0, dt=dt, values=values, attrs=lgdo.attrs)
     if isinstance(lgdo, (Struct, Table)):
         mp = {
-            key: map_lgdo_arrays(func, val, name + "/" + key)
+            key: map_lgdo_arrays(
+                func,
+                val,
+                name + "/" + key,
+                include_list=include_list,
+                exclude_list=exclude_list,
+            )
             for key, val in lgdo.items()
         }
         mp = {key: val for key, val in mp.items() if val is not None}

@@ -10,9 +10,13 @@
 ![GitHub pull requests](https://img.shields.io/github/issues-pr/legend-exp/legend-lh5io?logo=github)
 ![License](https://img.shields.io/github/license/legend-exp/legend-lh5io)
 [![Read the Docs](https://img.shields.io/readthedocs/legend-lh5io?logo=readthedocs)](https://legend-lh5io.readthedocs.io)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18700604.svg)](https://doi.org/10.5281/zenodo.18700604)
 
 This package provides a Python implementation of I/O to HDF5 for the LEGEND Data
 Objects (LGDOs), including [Numba](https://numba.pydata.org/)-accelerated custom
 compression algorithms for particle detector signals. More documentation is
 available in the
 [LEGEND data format specification](https://legend-exp.github.io/legend-data-format-specs).
+
+If you are using this software,
+[consider citing](https://doi.org/10.5281/zenodo.18700604)!

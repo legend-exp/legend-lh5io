@@ -39,7 +39,7 @@ dependencies = [
     "numpy>=1.21",
     "pandas>=1.4.4",
     "parse",
-    "legend-pydataobj>=1.16.0",
+    "legend-pydataobj>=2.0.0a2",
 ]
 dynamic = [
     "version",

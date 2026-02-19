@@ -32,7 +32,7 @@ class LH5Iterator(Iterator):
     --------
     Iterate through a table one chunk at a time and call ``process`` on each chunk::
 
-            from lgdo.lh5 import LH5Iterator
+            from lh5 import LH5Iterator
             for table in LH5Iterator("data.lh5", "geds/raw/energy", buffer_len=100):
                 process(table)
 
@@ -78,6 +78,7 @@ class LH5Iterator(Iterator):
         friend: Collection[LH5Iterator] = None,
         friend_prefix: str = "",
         friend_suffix: str = "",
+        safe_mode: bool = True,
         h5py_open_mode: str = "r",
     ) -> None:
         """
@@ -153,6 +154,9 @@ class LH5Iterator(Iterator):
             prefix for fields in friend iterator for resolving naming conflicts
         friend_suffix
             suffix for fields in friend iterator for resolving naming conflicts
+        safe_mode
+            if ``True`` and a friend iterator has a different number of files,
+            groups, or elements in a dataset, raise an Exception.
         h5py_open_mode
             file open mode used when acquiring file handles. ``r`` (default)
             opens files read-only while ``a`` allow opening files for
@@ -223,30 +227,56 @@ class LH5Iterator(Iterator):
         if isinstance(group_data, pd.DataFrame):
             self.group_data = ak.Array(dict(group_data))
         elif group_data is not None:
-            self.group_data = ak.Array(group_data)
+            self.group_data = ak.from_iter(group_data)
         else:
             self.group_data = None
 
-        if isinstance(self.group_data, ak.Array):
+        # check that groups and lh5_files are compatible
+        if len(self.groups) != len(self.lh5_files):
+            msg = "lh5_files and groups could not be broadcast onto one another"
+            raise ValueError(msg)
+
+        if isinstance(self.group_data, (ak.Array, ak.Record)):
             if not self.group_data.fields:
                 msg = "group_data must have named fields"
                 raise ValueError(msg)
-            self.group_data = ak.zip(
-                {f: self.group_data[f] for f in self.group_data.fields}
-            )
-            if self.group_data.ndim == 1:
-                self.group_data = ak.Array([self.group_data] * len(self.lh5_files))
-            if not all(
-                len(gd) == len(gps)
-                for gd, gps in zip(self.group_data, self.groups, strict=False)
-            ):
-                msg = "group_data must have same array structure as groups"
-                raise ValueError(msg)
 
-        # check that groups and lh5_files are compatible
-        if len(self.groups) != len(self.lh5_files):
-            msg = "lh5_files and groups must have same length at first level of nesting"
-            raise ValueError(msg)
+            # flatten out any nested fields with _'s
+            def flatten_fields(ar: ak.Array):
+                ret = {}
+                for f in ar.fields:
+                    if not isinstance(ar[f], ak.Record):
+                        ret[f] = ar[f]
+                    else:
+                        contents = flatten_fields(ar[f])
+                        for sub_f, val in contents.items():
+                            ret[f"{f}_{sub_f}"] = val
+                return ret
+
+            self.group_data = flatten_fields(self.group_data)
+
+            # repeat group data over any dimensions as needed
+            broadcast_files = not all(
+                not isinstance(ar, ak.Array) or len(ar) == len(self.lh5_files)
+                for ar in self.group_data.values()
+            )
+            records = []
+            for i_f, gps in enumerate(self.groups):
+                records.append([])
+
+                for ar in self.group_data.values():
+                    v = ar if broadcast_files else ar[i_f]
+                    if isinstance(v, ak.Array) and len(v) != len(gps):
+                        msg = "group_data could not be broadcast onto groups"
+                        raise ValueError(msg)
+
+                for i_g in range(len(gps)):
+                    record = {}
+                    for f, ar in self.group_data.items():
+                        v = ar if broadcast_files else ar[i_f]
+                        record[f] = v if not isinstance(v, ak.Array) else v[i_g]
+                    records[i_f].append(record)
+            self.group_data = ak.Array(records)
 
         # outer-product and flatten nested lists to get all group/file combinations for datasets
         file_list = []
@@ -263,7 +293,8 @@ class LH5Iterator(Iterator):
                     group_data_list.append(gd_list[i_g])
         self.lh5_files = file_list
         self.groups = group_list
-        self.group_data = group_data_list
+        if self.group_data is not None:
+            self.group_data = ak.fill_none(ak.Array(group_data_list), np.nan)
         self.n_datasets = len(self.lh5_files)
 
         if entry_list is not None and entry_mask is not None:
@@ -313,6 +344,7 @@ class LH5Iterator(Iterator):
         self.buffer_len = buffer_len
 
         # Attach the friend(s)
+        self.safe_mode = safe_mode
         if friend is None:
             friend = []
         elif isinstance(friend, LH5Iterator):
@@ -368,6 +400,8 @@ class LH5Iterator(Iterator):
         """Helper to get cumulative dataset length of file/groups"""
         if i_ds < 0:
             return 0
+        if i_ds >= len(self.ds_map):
+            return self.ds_map[-1]
         fcl = self.ds_map[i_ds]
 
         # if we haven't already calculated, calculate for all files up to i_ds
@@ -384,6 +418,8 @@ class LH5Iterator(Iterator):
         """Helper to get cumulative iterator entries in file/groups"""
         if i_ds < 0:
             return 0
+        if i_ds >= len(self.entry_map):
+            return self.entry_map[-1]
         n = self.entry_map[i_ds]
 
         # if we haven't already calculated, calculate for all files up to i_ds
@@ -468,16 +504,22 @@ class LH5Iterator(Iterator):
                 continue
 
             i_local = local_i_entry if local_idx is None else local_idx[local_i_entry]
-            self.lh5_buffer = self.lh5_st.read(
-                self.groups[i_ds],
-                self.lh5_files[i_ds],
-                start_row=i_local,
-                n_rows=n_entries - len(self.lh5_buffer),
-                idx=local_idx,
-                field_mask=self.field_mask,
-                obj_buf=self.lh5_buffer,
-                obj_buf_start=len(self.lh5_buffer),
-            )
+
+            if len(self.field_mask) > 0 or not isinstance(self.lh5_buffer, Table):
+                self.lh5_buffer = self.lh5_st.read(
+                    self.groups[i_ds],
+                    self.lh5_files[i_ds],
+                    start_row=i_local,
+                    n_rows=n_entries - len(self.lh5_buffer),
+                    idx=local_idx,
+                    field_mask=self.field_mask,
+                    obj_buf=self.lh5_buffer,
+                    obj_buf_start=len(self.lh5_buffer),
+                )
+            else:
+                self.lh5_buffer.resize(
+                    min(n_entries, self._get_ds_cumentries(i_ds) - i_entry)
+                )
 
             if self.group_data is not None:
                 data = self.group_data[i_ds]
@@ -491,6 +533,19 @@ class LH5Iterator(Iterator):
 
         for friend in self.friend:
             friend.read(i_entry)
+
+            if (
+                self.safe_mode
+                and self._get_ds_cumentries(i_ds) == friend._get_ds_cumentries(i_ds)
+                and np.any(self.entry_map[:i_ds] != friend.entry_map[:i_ds])
+            ):
+                i_diff = np.argmax(self.entry_map[:i_ds] != friend.entry_map[:i_ds])
+                msg = (
+                    f"with safe_mode = True, require that datasets have same sizes between friends. "
+                    f"File {self.lh5_files[i_diff]} group {self.groups[i_diff]} differs from "
+                    f"file {friend.lh5_files[i_diff]} group {friend.groups[i_diff]}."
+                )
+                raise RuntimeError(msg)
 
         return self.lh5_buffer
 
@@ -531,6 +586,13 @@ class LH5Iterator(Iterator):
         if not isinstance(friend, LH5Iterator):
             msg = "Friend must be an LH5Iterator"
             raise ValueError(msg)
+
+        if self.safe_mode and len(self.lh5_files) != len(friend.lh5_files):
+            msg = (
+                f"with safe_mode = True, friend iterator must have same number of datasets. "
+                f"Found {len(self.lh5_files)} in self, and {len(friend.lh5_files)} in friend."
+            )
+            raise RuntimeError(msg)
 
         # set buffer_lens to be equal
         if friend.buffer_len > self.buffer_len:
@@ -573,11 +635,13 @@ class LH5Iterator(Iterator):
             for fr in self.friend:
                 fr.reset_field_mask(None)
 
-            remaining_fields = []
+            remaining_fields = set()
 
         elif isinstance(mask, Mapping):
             self.field_mask = {
-                field: mask[field] for field in self.available_fields if field in mask
+                field.replace(".", "/"): mask[field]
+                for field in self.available_fields
+                if field in mask
             }
             mask = {
                 field: mask[field] for field in mask if field not in self.field_mask
@@ -602,7 +666,7 @@ class LH5Iterator(Iterator):
             remaining_fields = mask
 
         elif isinstance(mask, Collection) and all(isinstance(m, str) for m in mask):
-            mask = set(mask)
+            mask = {f.replace(".", "/") for f in mask}
             self.field_mask = mask & set(self.available_fields)
             mask -= self.field_mask
 
@@ -627,15 +691,18 @@ class LH5Iterator(Iterator):
                 return new_buffer
             return old_buffer
 
-        self.lh5_buffer = copy_data(
-            self.lh5_buffer,
-            self.lh5_st.get_buffer(
-                self.groups[0],
-                self.lh5_files[0],
-                size=len(self.lh5_buffer),
-                field_mask=self.field_mask,
-            ),
-        )
+        if len(self.field_mask) > 0 or not isinstance(self.lh5_buffer, Table):
+            self.lh5_buffer = copy_data(
+                self.lh5_buffer,
+                self.lh5_st.get_buffer(
+                    self.groups[0],
+                    self.lh5_files[0],
+                    size=len(self.lh5_buffer),
+                    field_mask=self.field_mask,
+                ),
+            )
+        else:
+            self.lh5_buffer = Table(size=0)
 
         for fr, pre, suf in zip(
             self.friend, self.friend_prefix, self.friend_suffix, strict=False
@@ -648,9 +715,11 @@ class LH5Iterator(Iterator):
             )
 
         # join Table with group metadata; repeat first record to initialize
-        if self.group_data:
-            tb_gd = deepcopy(Table(ak.Array([self.group_data[0]])))
+        if self.group_data is not None:
+            # deepcopy required to prevent ownership conflict
+            tb_gd = deepcopy(Table(self.group_data[0:1], 1))
             tb_gd.resize(len(self.lh5_buffer))
+            remaining_fields -= set(tb_gd)
             self.lh5_buffer.join(tb_gd)
 
         if warn_missing and len(remaining_fields) > 0:
@@ -819,27 +888,25 @@ class LH5Iterator(Iterator):
         self.__dict__ = d
         self.lh5_st = LH5Store(**(d["lh5_st"]))
         self.lh5_st.gimme_file(self.lh5_files[0])
-        self.lh5_buffer = self.lh5_st.get_buffer(
-            self.groups[0],
-            self.lh5_files[0],
-            size=self.buffer_len,
-            field_mask=self.field_mask,
-        )
-        for fr, pre, suf in zip(
-            self.friend, self.friend_prefix, self.friend_suffix, strict=False
-        ):
-            self.lh5_buffer.join(
-                fr.lh5_buffer,
-                keep_mine=True,
-                prefix=pre,
-                suffix=suf,
-            )
+
+        self.lh5_buffer = Table(size=0)
+
+        # recursively walk through friends and append field_masks
+        def build_field_mask(it):
+            field_mask = it.field_mask
+            for fr in it.friend:
+                field_mask |= fr.field_mask
+            return field_mask
+
+        self.reset_field_mask(build_field_mask(self))
 
     def _select_groups(self, i_beg, i_end):
         """Reduce list of files and groups; used by _generate_workers"""
         s = slice(i_beg, i_end)
         self.lh5_files = self.lh5_files[s]
         self.groups = self.groups[s]
+        if self.group_data is not None:
+            self.group_data = self.group_data[s]
         self.n_datasets = i_end - i_beg
 
         if i_beg > 0:
@@ -1003,6 +1070,8 @@ class LH5Iterator(Iterator):
     def query(
         self,
         where: Callable | str,
+        *,
+        fields: Collection[str] | Mapping[str, str | None] = None,
         processes: Executor | int = None,
         executor: Executor = None,
         library: str = None,
@@ -1041,9 +1110,16 @@ class LH5Iterator(Iterator):
               - ``pandas.DataFrame``: pandas dataframe. Treat as mapping from column
                 name to values
 
-            - A string expression. This will call `Table.eval` to select events and
-                return a table with all fields in the `field_mask`, in a data format
-                provided with `library`.
+            - A string expression. This will call ``eval``, with the table columns
+              provided as local variables formatted as :meth:`awkward.Array`, and
+              access to :mod:`awkward` (or ``ak``) and :mod:`numpy` (or ``np``).
+              Return a table formatted according to ``library``
+
+        fields:
+            list of fields to return. If ``None`` return all fields in ``field_mask``.
+            If a mapping is provided, key corresponds to name of field in this iterator,
+            and value is an alias to name in returned table; if alias is ``None``, do
+            not rename.
 
         processes:
             number of processes. If ``None``, use number equal to threads available
@@ -1060,7 +1136,7 @@ class LH5Iterator(Iterator):
             where = _identity
 
         if isinstance(where, str):
-            where = _table_query(where, library)
+            where = _table_query(where, library, fields)
 
         test = where(self.lh5_buffer, self)
         if isinstance(test, LGDOCollection):
@@ -1143,8 +1219,10 @@ class LH5Iterator(Iterator):
               - ``Collection[ArrayLike]``: return list of values in same order as axes
               - ``Mapping[str, ArrayLike]``: mapping from axis name to values
               - :class:`pandas.DataFrame`: treat as mapping from column name to values
-            - A string expression. This will call :meth:`lgdo.Table.eval` and return
-              a pandas DataFrame containing all columns in the fields mask.
+
+            - A string expression. This will call ``eval``, with the table columns
+              provided as local variables formatted as :meth:`awkward.Array`, and
+              access to :mod:`awkward` (or ``ak``) and :mod:`numpy` (or ``np``).
 
         keys:
             list of keys fields corresponding to axes. Use if where
@@ -1157,7 +1235,7 @@ class LH5Iterator(Iterator):
             If ``None``, create a :class:`concurrent.futures.`ProcessPoolExecutor`
             with number of processes equal to ``processes``.
         hist_kwargs:
-            additional keyword arguments for constructing Hist. See :class:`hist.Hist`.
+            additional keyword arguments for constructing :class:`hist.Hist`.
         """
 
         # get initial hist for each thread
@@ -1172,7 +1250,7 @@ class LH5Iterator(Iterator):
         if where is None:
             where = _identity
         elif isinstance(where, str):
-            where = _table_query(where, "ak")
+            where = _table_query(where, "ak", None)
 
         h = self.map(
             where,
@@ -1229,18 +1307,35 @@ class _table_query:
 
     expr: str
     library: str
+    fields: Collection[str] | Mapping[str, str | None] | None
+
+    def __post_init__(self):
+        # turn collection into mapping
+        if self.fields is not None and not isinstance(self.fields, Mapping):
+            self.fields = dict.fromkeys(self.fields)
 
     def __call__(self, tab, _):
         "Evaluate selection and return selected elements"
-        # Note this could probably be done more simply if we
-        # implemented __getitem__ to work with lists/slices
-        mask = tab.eval(self.expr)
-        ret = tab.view_as("ak")[mask]
-        if self.library == "ak":
-            return ret
+        args = {f: a.view_as("ak", with_units=True) for f, a in tab.items()}
+        if self.fields is not None:
+            for k, v in self.fields.items():
+                if v is not None:
+                    args[v] = tab[k]
+
+        mask = eval(
+            self.expr,
+            {"np": np, "numpy": np, "ak": ak, "awkward": ak},
+            args,
+        )
+        ret = tab[mask]
+        if self.fields is not None:
+            ret = Table(
+                {(k if f is None else f): ret[k] for k, f in self.fields.items()}
+            )
+
         if self.library is None:
-            return Table(ret)
-        return Table(ret).view_as(self.library)
+            return ret
+        return ret.view_as(self.library, with_units=True)
 
 
 class _hist_filler:

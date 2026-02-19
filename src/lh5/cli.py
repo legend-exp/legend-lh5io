@@ -1,4 +1,4 @@
-"""legend-pydataobj's command line interface utilities."""
+"""legend-lh5io's command line interface utilities."""
 
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ def lh5ls(args=None):
     parser.add_argument(
         "--version",
         action="store_true",
-        help="""Print legend-pydataobj version and exit""",
+        help="""Print legend-lh5io version and exit""",
     )
     parser.add_argument(
         "--verbose",
@@ -110,7 +110,7 @@ Exclude the /data/table1/col1 Table column:
     parser.add_argument(
         "--version",
         action="store_true",
-        help="""Print legend-pydataobj version and exit""",
+        help="""Print legend-lh5io version and exit""",
     )
     parser.add_argument(
         "--verbose",

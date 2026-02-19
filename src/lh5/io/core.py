@@ -41,7 +41,7 @@ def read(
     Reading individual rows can be orders of magnitude slower than reading
     the whole object and then indexing the desired rows. The default
     behavior (``use_h5idx=False``) is to use slightly more memory for a
-    much faster read. See `legend-pydataobj/issues/#29
+    much faster read. See `legend-pydataobj#29
     <https://github.com/legend-exp/legend-pydataobj/issues/29>`_ for
     additional information.
 

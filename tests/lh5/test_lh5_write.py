@@ -497,7 +497,7 @@ def test_write_append_struct(tmptestdir):
 def test_write_structs_not_groups(tmptestdir):
     outfile = str(tmptestdir / "test-write-structs-not-groups2.lh5")
 
-    scalar = types.Scalar("made with legend-pydataobj!")
+    scalar = types.Scalar("made with legend-lh5io!")
     array = types.Array([1, 2, 3])
     array2 = types.Array([4, 5, 6])
     lh5.write(scalar, name="message", lh5_file=outfile, wo_mode="overwrite_file")

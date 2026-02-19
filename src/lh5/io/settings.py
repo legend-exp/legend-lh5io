@@ -4,7 +4,7 @@ from typing import Any
 
 
 def default_hdf5_settings() -> dict[str, Any]:
-    """Returns the HDF5 settings for writing data to disk to the pydataobj defaults.
+    """Returns the HDF5 settings for writing data to disk to the lh5io defaults.
 
     Examples
     --------

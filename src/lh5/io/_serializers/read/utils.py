@@ -185,6 +185,7 @@ def read_size_in_bytes(h5o, fname, oname, field_mask=None):
     if lgdotype in (
         types.Scalar,
         types.Array,
+        types.ArrayOfDetectorIDs,
         types.ArrayOfEqualSizedArrays,
         types.FixedSizeArray,
     ):

@@ -383,7 +383,9 @@ def test_write_detectorids(caplog, tmptestdir):
         np.array([0x02000002, 0x01000000, 0x09002780], dtype=np.uint32)
     )
     ids2 = types.VectorOfVectors(
-        flattened_data=types.ArrayOfDetectorIDs(np.array([0x02000002, 0x01000000, 0x09002780], dtype=np.uint32)),
+        flattened_data=types.ArrayOfDetectorIDs(
+            np.array([0x02000002, 0x01000000, 0x09002780], dtype=np.uint32)
+        ),
         cumulative_length=np.array([1, 3]),
     )
 

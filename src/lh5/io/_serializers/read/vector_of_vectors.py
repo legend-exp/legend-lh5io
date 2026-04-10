@@ -28,7 +28,6 @@ def _h5_read_vector_of_vectors(
     start_row=0,
     n_rows=sys.maxsize,
     idx=None,
-    use_h5idx=False,
     obj_buf=None,
     obj_buf_start=0,
 ):
@@ -68,7 +67,6 @@ def _h5_read_vector_of_vectors(
         start_row=start_row,
         n_rows=n_rows,
         idx=idx,
-        use_h5idx=use_h5idx,
         obj_buf=cumulen_buf,
         obj_buf_start=obj_buf_start,
     )
@@ -99,7 +97,6 @@ def _h5_read_vector_of_vectors(
                 start_row=start_row,
                 n_rows=n_rows,
                 idx=idx2,
-                use_h5idx=use_h5idx,
                 obj_buf=None,
             )
             fd_starts = fd_starts.nda  # we just need the nda
@@ -208,7 +205,6 @@ def _h5_read_vector_of_vectors(
         start_row=fd_start,
         n_rows=fd_n_rows,
         idx=fd_idx,
-        use_h5idx=use_h5idx,
         obj_buf=fd_buf,
         obj_buf_start=fd_buf_start,
     )

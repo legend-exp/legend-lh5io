@@ -215,6 +215,9 @@ class LH5Store:
         --------
         .lh5.core.read
         """
+        if use_h5idx:
+            log.warning("use_h5idx is deprecated and has no effect.")
+
         # grab files from store
         if isinstance(lh5_file, (str, Path, h5py.File)):
             h5f = self.gimme_file(lh5_file, **file_kwargs)
@@ -223,14 +226,13 @@ class LH5Store:
         return read(
             name,
             h5f,
-            start_row,
-            n_rows,
-            idx,
-            use_h5idx,
-            field_mask,
-            obj_buf,
-            obj_buf_start,
-            decompress,
+            start_row=start_row,
+            n_rows=n_rows,
+            idx=idx,
+            field_mask=field_mask,
+            obj_buf=obj_buf,
+            obj_buf_start=obj_buf_start,
+            decompress=decompress,
         )
 
     def write(

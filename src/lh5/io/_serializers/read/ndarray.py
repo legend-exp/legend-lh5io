@@ -23,7 +23,6 @@ def _h5_read_ndarray(
     start_row=0,
     n_rows=sys.maxsize,
     idx=None,
-    use_h5idx=False,
     obj_buf=None,
     obj_buf_start=0,
 ):
@@ -60,17 +59,9 @@ def _h5_read_ndarray(
             None,
             (n_rows_to_read, *fspace.shape[1:]),
         )
-    elif use_h5idx:
-        # Note that h5s will automatically merge adjacent elements into a range
+    else:
         fspace.select_none()
-        for i in idx:
-            fspace.select_hyperslab(
-                (i,) + (0,) * (h5d.rank - 1),
-                (1,) * h5d.rank,
-                None,
-                (1, *fspace.shape[1:]),
-                h5py.h5s.SELECT_OR,
-            )
+        h5py._selector.Selector(fspace).make_selection((idx,))
 
     # Now read the array
     if obj_buf is not None and n_rows_to_read > 0:
@@ -79,19 +70,14 @@ def _h5_read_ndarray(
             obj_buf.resize(buf_size)
         dest_sel = np.s_[obj_buf_start:buf_size]
 
-        if idx is None or use_h5idx:
-            mspace = h5py.h5s.create_simple(obj_buf.nda.shape)
-            mspace.select_hyperslab(
-                (obj_buf_start,) + (0,) * (h5d.rank - 1),
-                (1,) * h5d.rank,
-                None,
-                (n_rows_to_read, *fspace.shape[1:]),
-            )
-            h5d.read(mspace, fspace, obj_buf.nda)
-        else:
-            tmp = np.empty(fspace.shape, h5d.dtype)
-            h5d.read(fspace, fspace, tmp)
-            obj_buf.nda[dest_sel, ...] = tmp[idx, ...]
+        mspace = h5py.h5s.create_simple(obj_buf.nda.shape)
+        mspace.select_hyperslab(
+            (obj_buf_start,) + (0,) * (h5d.rank - 1),
+            (1,) * h5d.rank,
+            None,
+            (n_rows_to_read, *fspace.shape[1:]),
+        )
+        h5d.read(mspace, fspace, obj_buf.nda)
         nda = obj_buf.nda
     elif n_rows == 0:
         tmp_shape = (0, *h5d.shape[1:])
@@ -99,12 +85,7 @@ def _h5_read_ndarray(
     else:
         mspace = h5py.h5s.create_simple((n_rows_to_read, *fspace.shape[1:]))
         nda = np.empty(mspace.shape, h5d.dtype)
-        if idx is None or use_h5idx:
-            h5d.read(mspace, fspace, nda)
-        else:
-            tmp = np.empty(fspace.shape, h5d.dtype)
-            h5d.read(fspace, fspace, tmp)
-            nda[:, ...] = tmp[idx, ...]
+        h5d.read(mspace, fspace, nda)
 
     # Finally, set attributes and return objects
     attrs = read_attrs(h5d, fname, oname)

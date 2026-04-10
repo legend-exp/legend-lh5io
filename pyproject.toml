@@ -33,7 +33,7 @@ requires-python = ">=3.10"
 dependencies = [
     "awkward>=2",
     "colorlog",
-    "h5py>=3.10",
+    "h5py>=3.16",
     "hdf5plugin",
     "numba!=0.53.*,!=0.54.*",
     "numpy>=1.21",

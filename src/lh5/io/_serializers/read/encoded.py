@@ -49,7 +49,6 @@ def _h5_read_encoded_array(
     start_row=0,
     n_rows=sys.maxsize,
     idx=None,
-    use_h5idx=False,
     obj_buf=None,
     obj_buf_start=0,
     decompress=True,
@@ -77,7 +76,6 @@ def _h5_read_encoded_array(
             start_row=start_row,
             n_rows=n_rows,
             idx=idx,
-            use_h5idx=use_h5idx,
             obj_buf=None if decompress else decoded_size_buf,
             obj_buf_start=0 if decompress else obj_buf_start,
         )
@@ -101,7 +99,6 @@ def _h5_read_encoded_array(
         start_row=start_row,
         n_rows=n_rows,
         idx=idx,
-        use_h5idx=use_h5idx,
         obj_buf=None if decompress else encoded_data_buf,
         obj_buf_start=0 if decompress else obj_buf_start,
     )

@@ -38,28 +38,8 @@ def _h5_read_vector_of_vectors(
     # read out cumulative_length
     cumulen_buf = None if obj_buf is None else obj_buf.cumulative_length
     h5d_cl = h5py.h5d.open(h5g, b"cumulative_length")
-    if idx is not None:
-        ds_n_rows = h5d_cl.get_space().shape[0]
-        idx = np.asarray(idx)
-        valid_mask = (idx >= 0) & (idx < ds_n_rows)
-        n_invalid = np.count_nonzero(~valid_mask)
-        if n_invalid > 0:
-            log.warning(
-                "Index array for '%s' in file '%s' contains %d out-of-range "
-                "entries (total %d); these indices will be ignored.",
-                oname,
-                fname,
-                n_invalid,
-                idx.size,
-            )
-        idx = idx[valid_mask]
-        if idx.size == 0:
-            log.warning(
-                "All indices for '%s' in file '%s' were out of range; "
-                "resulting selection is empty.",
-                oname,
-                fname,
-            )
+    idx = np.asarray(idx) if idx is not None else None
+
     cumulative_length, n_rows_read = _h5_read_array(
         h5d_cl,
         fname,
@@ -75,60 +55,13 @@ def _h5_read_vector_of_vectors(
         obj_buf_start : obj_buf_start + n_rows_read
     ]
 
-    if idx is not None and n_rows_read > 0:
-        # get the starting indices for each array in flattened data:
-        # the starting index for array[i] is cumulative_length[i-1]
-        idx2 = np.asarray(idx).copy() - 1
-
-        # re-read cumulative_length with these indices
-        # note this will allocate memory for fd_starts!
-        fd_start = None
-        if idx2.size > 0 and idx2[0] == -1:
-            idx2 = idx2[1:]
-            fd_start = 0  # this variable avoids an ndarray append
-
-        if idx2.size == 0:
-            fd_starts = np.empty(0, dtype=this_cumulen_nda.dtype)
-        else:
-            fd_starts, _fds_n_rows_read = _h5_read_array(
-                h5d_cl,
-                fname,
-                f"{oname}/cumulative_length",
-                start_row=start_row,
-                n_rows=n_rows,
-                idx=idx2,
-                obj_buf=None,
-            )
-            fd_starts = fd_starts.nda  # we just need the nda
-            if fd_start is None:
-                fd_start = fd_starts[0]
-
-        # compute the length that flattened_data will have after the
-        # fancy-indexed read
-        if fd_starts.size == 0:
-            fd_n_rows = this_cumulen_nda[0]
-        else:
-            fd_n_rows = np.sum(this_cumulen_nda[-len(fd_starts) :] - fd_starts)
-            if fd_start == 0:
-                fd_n_rows += this_cumulen_nda[0]
-
-        # now make fd_idx
-        fd_idx = np.empty(fd_n_rows, dtype="int32")
-        fd_idx = _make_fd_idx(fd_starts, this_cumulen_nda, fd_idx)
-
-        # Now clean up this_cumulen_nda, to be ready
-        # to match the in-memory version of flattened_data. Note: these
-        # operations on the view change the original array because they are
-        # numpy arrays, not lists.
-        if fd_starts.size > 0:
-            this_cumulen_nda[-len(fd_starts) :] -= fd_starts
-        np.cumsum(this_cumulen_nda, out=this_cumulen_nda)
-
-    else:
+    # fix this_cumulen_nda so that cumulative_lengths match in-memory layout
+    # and find the ranges of values to read out for flattened_data (fd_idx)
+    fd_start = 0
+    if idx is None or n_rows_read == 0:
         fd_idx = None
 
         # determine the start_row and n_rows for the flattened_data readout
-        fd_start = 0
         if start_row > 0 and n_rows_read > 0:
             # need to read out the cumulen sample -before- the first sample
             # read above in order to get the starting row of the first
@@ -153,17 +86,51 @@ def _h5_read_vector_of_vectors(
                 )
                 raise LH5DecodeError(msg, fname, oname)
 
-        # Now done with this_cumulen_nda, so we can clean it up to be ready
-        # to match the in-memory version of flattened_data. Note: these
-        # operations on the view change the original array because they are
-        # numpy arrays, not lists.
-        #
-        # First we need to subtract off the in-file offset for the start of
-        # read for flattened_data
+        # subtract offset of flattened_data from cumulative_length
         this_cumulen_nda -= fd_start
 
         # determine the number of rows for the flattened_data readout
         fd_n_rows = this_cumulen_nda[-1] if n_rows_read > 0 else 0
+
+    elif idx.ndim == 1:
+        # get the starting indices for each array in flattened data:
+        # the starting index for array[i] is cumulative_length[i-1]
+        fstarts, _ = _h5_read_array(
+            h5d_cl,
+            fname,
+            f"{oname}/cumulative_length",
+            start_row=start_row,
+            n_rows=n_rows,
+            idx=(idx if idx[0] > 0 else idx[1:]) - 1,
+            obj_buf=Array(
+                shape=len(this_cumulen_nda), fill_val=0, dtype=this_cumulen_nda.dtype
+            ),
+            obj_buf_start=0 if idx[0] > 0 else 1,
+        )
+
+        # get 2D array of start/stop and cumulative lengths
+        mask = this_cumulen_nda > fstarts  # remove len 0 entries
+        fd_idx = np.stack([fstarts[mask], this_cumulen_nda[mask]], axis=1)
+        np.cumsum(this_cumulen_nda - fstarts, out=this_cumulen_nda)
+        fd_n_rows = this_cumulen_nda[-1]
+
+    elif idx.ndim == 2 and idx.shape[1] == 2:
+        # get starting indices for contiguous blocks of arrays in flattened data:
+        # the starting index for block[i] is cumulative_length[idx[i,0]-1]
+        fstarts, _ = _h5_read_array(
+            h5d_cl,
+            fname,
+            f"{oname}/cumulative_length",
+            start_row=start_row,
+            n_rows=n_rows,
+            idx=(idx[:, 0] if idx[0, 0] > 0 else idx[1:, 0]) - 1,
+            obj_buf=Array(shape=len(idx), fill_val=0, dtype=this_cumulen_nda.dtype),
+            obj_buf_start=0 if idx[0, 0] > 0 else 1,
+        )
+
+        # get 2D array of start/stop and cumulative
+        fd_idx = _h5_get_2D_fd_idx_and_cumulen(fstarts.nda, this_cumulen_nda)
+        fd_n_rows = this_cumulen_nda[-1]
 
     h5d_cl.close()
 
@@ -230,16 +197,34 @@ def _h5_read_vector_of_vectors(
     )
 
 
-@numba.njit(parallel=False, fastmath=True)
-def _make_fd_idx(starts, stops, idx):
-    k = 0
-    if len(starts) < len(stops):
-        for i in range(stops[0]):
-            idx[k] = i
-            k += 1
-        stops = stops[1:]
-    for j in range(len(starts)):
-        for i in range(starts[j], stops[j]):
-            idx[k] = i
-            k += 1
-    return idx
+@numba.njit
+def _h5_get_2D_fd_idx_and_cumulen(fstarts, this_cumulen_nda):
+    # helper to get 2D ranges for flattened data and update cumulen in place
+    fd_idx = np.empty((len(fstarts), 2), dtype=fstarts.dtype)
+    i_fd = 0
+    i_start = 0
+    fd_idx[0, 0] = fstarts[0]
+    last_cumulen = fstarts[0]
+    start = fstarts[0]
+    for i_cl in range(len(this_cumulen_nda)):
+        # advance through fstarts if we have moved into a new block of arrays
+        if i_start < len(fstarts) - 1 and this_cumulen_nda[i_cl] > fstarts[i_start + 1]:
+            i_start += 1
+            start = fstarts[i_start]
+
+        # if we have a gap between ranges, add a new fd_idx pair and use start
+        if last_cumulen < start:
+            fd_idx[i_fd, 1] = last_cumulen
+            i_fd += 1
+            fd_idx[i_fd, 0] = start
+            last_cumulen = start
+
+        # correct cumulens for this range
+        this_len = this_cumulen_nda[i_cl] - last_cumulen
+        last_cumulen = this_cumulen_nda[i_cl]
+        if i_cl == 0:
+            this_cumulen_nda[i_cl] = this_len
+        else:
+            this_cumulen_nda[i_cl] = this_cumulen_nda[i_cl - 1] + this_len
+    fd_idx[i_fd, 1] = last_cumulen
+    return fd_idx[: i_fd + 1]

@@ -100,7 +100,7 @@ def _h5_read_lgdo(
             # check if idx is just an ordered list of the integers if so can ignore
             if len(idx_diff) > 0 and (idx_diff == 1).all():
                 start_row = max(start_row, idx[0])
-                n_rows = min(n_rows, len(idx))
+                n_rows = min(n_rows, idx[-1] + 1 - start_row)
                 idx = None
             else:
                 # chop off indices < start_row
@@ -110,10 +110,9 @@ def _h5_read_lgdo(
                 ]  # works even if n_rows > len(idxa)
         elif idx.ndim == 2 and idx.shape[1] == 2:
             # chop off indices < start_row
-            i_first_valid = bisect.bisect_left(idx[:, 1], start_row)
+            i_first_valid = bisect.bisect_right(idx[:, 1], start_row)
             if i_first_valid < len(idx) and idx[i_first_valid, 0] < start_row:
                 idx[i_first_valid, 0] = start_row
-                i_first_valid -= 1
             idx = idx[i_first_valid:]
 
             # make sure cumulative length of idx doesn't exceed n_rows

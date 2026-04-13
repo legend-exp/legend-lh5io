@@ -74,6 +74,9 @@ def lh5_file(tmptestdir):
             nda=np.array([5, 6, 7, 8]),
             attrs={"compression": None},
         ),
+        "e": lgdo.ArrayOfDetectorIDs(
+            np.array([0x02000002, 0x01000000, 0x09002780, 0x00000000], dtype=np.uint32)
+        ),
     }
 
     struct.add_field("table", types.Table(col_dict=col_dict, attrs={"stuff": 5}))

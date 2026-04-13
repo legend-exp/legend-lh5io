@@ -23,6 +23,7 @@ _lgdo_datatype_map: dict[str, types.LGDO] = OrderedDict(
         (types.Table, r"^table\{.*\}$"),
         (types.FixedSizeArray, r"^fixedsize_array<\d+>\{.+\}$"),
         (types.ArrayOfEqualSizedArrays, r"^array_of_equalsized_arrays<1,1>\{.+\}$"),
+        (types.ArrayOfDetectorIDs, r"^array<\d+>\{detectorid\}$"),
         (types.Array, r"^array<\d+>\{.+\}$"),
     ]
 )

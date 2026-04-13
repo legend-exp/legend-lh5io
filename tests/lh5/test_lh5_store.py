@@ -108,7 +108,7 @@ def test_read_size_in_bytes(lh5_file):
     assert store.read_size_in_bytes("/data/struct_full/aoesa", lh5_file) == 100
     assert store.read_size_in_bytes("/data/struct_full/array", lh5_file) == 40
     assert store.read_size_in_bytes("/data/struct_full/scalar", lh5_file) == 8
-    assert store.read_size_in_bytes("/data/struct_full/table", lh5_file) == 128
+    assert store.read_size_in_bytes("/data/struct_full/table", lh5_file) == 144
     # assert store.read_size_in_bytes("/data/struct_full/voev", lh5_file) == ?
     assert store.read_size_in_bytes("/data/struct_full/vov", lh5_file) == 144
     assert store.read_size_in_bytes("/data/struct_full/vov3d", lh5_file) == 232
@@ -488,7 +488,7 @@ def test_read_with_nested_field_mask(lh5_file):
         "/data", lh5_file, decompress=False, field_mask=["struct/table"]
     )
     assert sorted(lh5_obj.struct.keys()) == ["table"]
-    assert sorted(lh5_obj.struct.table.keys()) == ["a", "b", "c", "d"]
+    assert sorted(lh5_obj.struct.table.keys()) == ["a", "b", "c", "d", "e"]
 
     lh5_obj = store.read("/data", lh5_file, field_mask=["struct/table/a"])
     assert sorted(lh5_obj.struct.table.keys()) == ["a"]
@@ -496,7 +496,7 @@ def test_read_with_nested_field_mask(lh5_file):
     lh5_obj = store.read(
         "/data", lh5_file, decompress=False, field_mask={"struct/table/b": False}
     )
-    assert sorted(lh5_obj.struct.table.keys()) == ["a", "c", "d"]
+    assert sorted(lh5_obj.struct.table.keys()) == ["a", "c", "d", "e"]
 
     lh5_obj = store.read(
         "/data",
@@ -504,7 +504,7 @@ def test_read_with_nested_field_mask(lh5_file):
         decompress=False,
         field_mask=["struct/table", "struct/table/b"],
     )
-    assert sorted(lh5_obj.struct.table.keys()) == ["a", "b", "c", "d"]
+    assert sorted(lh5_obj.struct.table.keys()) == ["a", "b", "c", "d", "e"]
 
     lh5_obj = store.read(
         "/data",
@@ -520,7 +520,7 @@ def test_read_with_nested_field_mask(lh5_file):
         decompress=False,
         field_mask={"struct/table": True, "struct/table/b": False},
     )
-    assert sorted(lh5_obj.struct.table.keys()) == ["a", "c", "d"]
+    assert sorted(lh5_obj.struct.table.keys()) == ["a", "c", "d", "e"]
 
 
 def test_read_lgnd_array(lgnd_file):

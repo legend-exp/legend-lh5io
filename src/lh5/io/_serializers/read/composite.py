@@ -8,6 +8,7 @@ import h5py
 import numpy as np
 from lgdo.types import (
     Array,
+    ArrayOfDetectorIDs,
     ArrayOfEncodedEqualSizedArrays,
     ArrayOfEqualSizedArrays,
     FixedSizeArray,
@@ -25,6 +26,7 @@ from ...exceptions import LH5DecodeError
 from . import utils
 from .array import (
     _h5_read_array,
+    _h5_read_array_of_detectorids,
     _h5_read_array_of_equalsized_arrays,
     _h5_read_fixedsize_array,
 )
@@ -173,6 +175,19 @@ def _h5_read_lgdo(
 
     if lgdotype is FixedSizeArray:
         return _h5_read_fixedsize_array(
+            h5o,
+            fname,
+            oname,
+            start_row=start_row,
+            n_rows=n_rows,
+            idx=idx,
+            use_h5idx=use_h5idx,
+            obj_buf=obj_buf,
+            obj_buf_start=obj_buf_start,
+        )
+
+    if lgdotype is ArrayOfDetectorIDs:
+        return _h5_read_array_of_detectorids(
             h5o,
             fname,
             oname,

@@ -8,14 +8,13 @@ import numba
 import numpy as np
 from lgdo.types import (
     Array,
+    ArrayOfDetectorIDs,
     VectorOfVectors,
 )
 
 from ... import datatype as dtypeutils
 from ...exceptions import LH5DecodeError
-from .array import (
-    _h5_read_array,
-)
+from .array import _h5_read_array, _h5_read_array_of_detectorids
 from .utils import read_attrs
 
 log = logging.getLogger(__name__)
@@ -195,10 +194,12 @@ def _h5_read_vector_of_vectors(
     lgdotype = dtypeutils.datatype(val.item().decode())
     if lgdotype is Array:
         _func = _h5_read_array
+    elif lgdotype is ArrayOfDetectorIDs:
+        _func = _h5_read_array_of_detectorids
     elif lgdotype is VectorOfVectors:
         _func = _h5_read_vector_of_vectors
     else:
-        msg = "type {lgdotype.__name__} is not supported"
+        msg = f"type {lgdotype.__name__} is not supported"
         raise LH5DecodeError(msg, fname, f"{oname}/flattened_data")
 
     flattened_data, _ = _func(

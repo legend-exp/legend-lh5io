@@ -2,7 +2,12 @@ from __future__ import annotations
 
 import logging
 
-from lgdo.types import Array, ArrayOfEqualSizedArrays, FixedSizeArray
+from lgdo.types import (
+    Array,
+    ArrayOfDetectorIDs,
+    ArrayOfEqualSizedArrays,
+    FixedSizeArray,
+)
 
 from . import utils
 from .ndarray import _h5_read_ndarray
@@ -25,6 +30,10 @@ def _h5_read_array_generic(type_, h5d, fname, oname, **kwargs):
 
 def _h5_read_array(h5d, fname, oname, **kwargs):
     return _h5_read_array_generic(Array, h5d, fname, oname, **kwargs)
+
+
+def _h5_read_array_of_detectorids(h5d, fname, oname, **kwargs):
+    return _h5_read_array_generic(ArrayOfDetectorIDs, h5d, fname, oname, **kwargs)
 
 
 def _h5_read_fixedsize_array(h5d, fname, oname, **kwargs):

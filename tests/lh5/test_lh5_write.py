@@ -369,6 +369,62 @@ def test_write_object_append_column(tmptestdir):
     assert np.array_equal(tb_dat["dset2"].nda, np.ones(10))
 
 
+# Test writing and reading arrays of detectorids.
+def test_write_detectorids(caplog, tmptestdir):
+    caplog.set_level(logging.DEBUG)
+    caplog.clear()
+
+    # Clean up from previous test runs
+    if Path(f"{tmptestdir}/write_detectorids_test.lh5").exists():
+        Path(f"{tmptestdir}/write_detectorids_test.lh5").unlink()
+
+    # Note: these correspond to B00000C, C00000A, and S632
+    ids1 = types.ArrayOfDetectorIDs(
+        np.array([0x02000002, 0x01000000, 0x09002780], dtype=np.uint32)
+    )
+    ids2 = types.VectorOfVectors(
+        flattened_data=types.ArrayOfDetectorIDs(
+            np.array([0x02000002, 0x01000000, 0x09002780], dtype=np.uint32)
+        ),
+        cumulative_length=np.array([1, 3]),
+    )
+
+    # Same field name, different values
+    store = lh5.LH5Store()
+    store.write(
+        ids1,
+        "array_of_ids",
+        f"{tmptestdir}/write_detectorids_test.lh5",
+        group="my_group",
+        wo_mode="append",
+    )
+    store.write(
+        ids2,
+        "vov_of_ids",
+        f"{tmptestdir}/write_detectorids_test.lh5",
+        group="my_group",
+        wo_mode="append",
+    )
+
+    # Now, check that the data were overwritten
+    ids3 = store.read(
+        "my_group/array_of_ids", f"{tmptestdir}/write_detectorids_test.lh5"
+    )
+    assert isinstance(ids3, types.ArrayOfDetectorIDs)
+    assert ids3.dtype == np.uint32
+    assert ids3.attrs["datatype"] == "array<1>{detectorid}"
+    assert (
+        ids3.nda == np.array([0x02000002, 0x01000000, 0x09002780], dtype=np.uint32)
+    ).all()
+
+    ids4 = store.read("my_group/vov_of_ids", f"{tmptestdir}/write_detectorids_test.lh5")
+    assert isinstance(ids4, types.VectorOfVectors)
+    assert ids4.attrs["datatype"] == "array<1>{array<1>{detectorid}}"
+    assert ids4.dtype == np.uint32
+    assert (ids4[0] == np.array([0x02000002], dtype=np.uint32)).all()
+    assert (ids4[1] == np.array([0x01000000, 0x09002780], dtype=np.uint32)).all()
+
+
 # Test writing and reading histograms.
 def test_write_histogram(caplog, tmptestdir):
     caplog.set_level(logging.DEBUG)

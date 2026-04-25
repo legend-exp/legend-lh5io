@@ -217,7 +217,6 @@ def _h5_read_lgdo(
             start_row=start_row,
             n_rows=n_rows,
             idx=idx,
-            use_h5idx=use_h5idx,
             obj_buf=obj_buf,
             obj_buf_start=obj_buf_start,
         )

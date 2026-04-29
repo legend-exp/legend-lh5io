@@ -11,8 +11,9 @@ from typing import Protocol
 import awkward as ak
 from lgdo.types import LGDO, Array, Struct, Table, VectorOfVectors, WaveformTable
 
-import lh5
-from lh5 import read, read_as
+from .core import read, read_as
+from .store import LH5Store
+from .tools import ls
 
 log = logging.getLogger(__name__)
 
@@ -151,13 +152,13 @@ def map_lgdo_arrays_on_file(
 
     # list of root lgdo names. Actually 2nd level, since / is the real root.
     # But I don't want to load all at once for memory reasons.
-    root_lgdo_names = lh5.ls(infile, recursive=False)
+    root_lgdo_names = ls(infile, recursive=False)
 
     msg = f"objects in {infile}: {root_lgdo_names}"
     log.info(msg)
 
     first_done = False
-    store = lh5.LH5Store()
+    store = LH5Store()
 
     # loop over lgdo objects
     for root_name in root_lgdo_names:

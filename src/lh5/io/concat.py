@@ -5,7 +5,9 @@ import logging
 
 from lgdo.types import Array, Scalar, Struct, Table, VectorOfVectors
 
-import lh5
+from .iterator import LH5Iterator
+from .store import LH5Store
+from .tools import ls
 
 log = logging.getLogger(__name__)
 
@@ -26,7 +28,7 @@ def _get_obj_list(
 
     """
     file0 = lh5_files[0]
-    obj_list_full = set(lh5.ls(file0, recursive=True))
+    obj_list_full = set(ls(file0, recursive=True))
 
     # let's remove objects with nested LGDOs inside
     to_remove = set()
@@ -55,7 +57,7 @@ def _get_obj_list(
 def _get_lgdos(file, obj_list):
     """Get name of LGDO objects."""
 
-    store = lh5.LH5Store()
+    store = LH5Store()
     h5f0 = store.gimme_file(file)
 
     lgdos = []
@@ -175,12 +177,12 @@ def lh5concat(
 
     lgdos, lgdo_structs = _get_lgdos(lh5_files[0], obj_list)
     first_done = False
-    store = lh5.LH5Store()
+    store = LH5Store()
 
     # loop over lgdo objects
     for lgdo in lgdos:
         # iterate over the files
-        for lh5_obj in lh5.LH5Iterator(lh5_files, lgdo):
+        for lh5_obj in LH5Iterator(lh5_files, lgdo):
             data = {lgdo: lh5_obj}
 
             # remove the nested fields

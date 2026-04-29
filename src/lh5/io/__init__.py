@@ -11,8 +11,10 @@ from __future__ import annotations
 # filters
 import hdf5plugin  # noqa: F401
 
+from . import concat, truncate
 from .core import read, read_as, write
 from .iterator import LH5Iterator
+from .settings import default_hdf5_settings
 from .store import LH5Store
 from .tools import ls, show
 from .utils import read_n_rows
@@ -26,7 +28,6 @@ __all__ = [
     "read",
     "read_as",
     "read_n_rows",
-    "reset_default_hdf5_settings",
     "show",
     "truncate",
     "write",

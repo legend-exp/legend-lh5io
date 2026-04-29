@@ -164,3 +164,17 @@ def test_concat(lgnd_test_data, tmptestdir):
     # check for reasonable failures
     with pytest.raises(RuntimeError):
         concat.lh5concat(output=outfile, lh5_files=[infile1], overwrite=True)
+
+
+def test_concat_empty(tmptestdir):
+    infile1 = f"{tmptestdir}/in1.lh5"
+    tab1 = types.Table({"a": types.Array(np.array([]))})
+    lh5.write(tab1, "/tab", infile1, wo_mode="of")
+
+    infile2 = f"{tmptestdir}/in2.lh5"
+    tab2 = types.Table({"a": types.Array(np.array([0, 1, 2]))})
+    lh5.write(tab2, "/tab", infile2, wo_mode="of")
+
+    # this should not crash if the first file has an empty table.
+    outfile = f"{tmptestdir}/out.lh5"
+    concat.lh5concat(output=outfile, lh5_files=[infile1, infile2], overwrite=True)

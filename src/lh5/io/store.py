@@ -176,7 +176,7 @@ class LH5Store:
 
         See Also
         --------
-        .lh5.utils.get_h5_group
+        .utils.get_h5_group
         """
         return utils.get_h5_group(group, base_group, grp_attrs, overwrite)
 
@@ -213,7 +213,7 @@ class LH5Store:
 
         See Also
         --------
-        .lh5.core.read
+        .core.read
         """
         if use_h5idx:
             log.warning("use_h5idx is deprecated and has no effect.")
@@ -252,7 +252,7 @@ class LH5Store:
 
         See Also
         --------
-        .lh5.core.write
+        .core.write
         """
         if wo_mode is None and self.default_mode in ["r", "read"]:
             wo_mode = "a"

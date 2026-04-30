@@ -12,7 +12,7 @@ from lgdo.types import (
     VectorOfVectors,
 )
 
-from ....utils import numba_defaults_kwargs as nb_kwargs
+from ....numba_utils import numba_defaults_kwargs as nb_kwargs
 from ... import datatype as dtypeutils
 from ...exceptions import LH5DecodeError
 from .array import _h5_read_array, _h5_read_array_of_detectorids

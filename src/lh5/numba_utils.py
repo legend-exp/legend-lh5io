@@ -30,17 +30,17 @@ class NumbaDefaults(MutableMapping):
     provided dictionary:
 
     >>> from numba import guvectorize
-    >>> from lgdo.utils import numba_defaults_kwargs as nb_kwargs
+    >>> from lh5.numba_utils import numba_defaults_kwargs as nb_kwargs
     >>> @guvectorize([], "", **nb_kwargs, nopython=True) # def proc(...): ...
 
     Customize one argument but still set defaults for the others:
 
-    >>> from lgdo.utils import numba_defaults as nb_defaults
+    >>> from lh5.numba_utils import numba_defaults as nb_defaults
     >>> @guvectorize([], "", **nb_defaults(cache=False) # def proc(...): ...
 
     Override global options at runtime:
 
-    >>> from lgdo.utils import numba_defaults
+    >>> from lh5.numba_utils import numba_defaults
     >>> # must set options before explicitly importing lgdo modules!
     >>> numba_defaults.cache = False
     >>> numba_defaults.boundscheck = True

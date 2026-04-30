@@ -11,7 +11,7 @@ from lgdo import types as lgdo
 from numpy import int32, ubyte, uint32
 from numpy.typing import NDArray
 
-from ..utils import numba_defaults_kwargs as nb_kwargs
+from ..numba_utils import numba_defaults_kwargs as nb_kwargs
 from .base import WaveformCodec
 
 log = logging.getLogger(__name__)

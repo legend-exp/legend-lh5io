@@ -7,7 +7,7 @@ LH5 Command Line Tools
 Inspecting LH5 files with ``lh5ls``
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-The ``lh5ls`` command uses :func:`.lh5.tools.show` to print a pretty
+The ``lh5ls`` command uses :func:`~.tools.show` to print a pretty
 representation of a LH5 file's contents:
 
 .. code-block:: console
@@ -42,8 +42,8 @@ Concatenating LGDOs with ``lh5concat``
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 The ``lh5concat`` command can be used to concatenate LGDO
-:class:`~.types.array.Array`, :class:`~.types.vectorofvector.VectorOfVectors`
-and :class:`~.types.table.Table` into an output LH5 file.
+:class:`lgdo.types.array.Array`, :class:`lgdo.types.vectorofvector.VectorOfVectors`
+and :class:`lgdo.types.table.Table` into an output LH5 file.
 
 Concatenate all eligible objects in ``file{1,2}.lh5`` into ``concat.lh5``: ::
 

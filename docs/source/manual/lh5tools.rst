@@ -42,8 +42,8 @@ Concatenating LGDOs with ``lh5concat``
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 The ``lh5concat`` command can be used to concatenate LGDO
-:class:`lgdo.types.array.Array`, :class:`lgdo.types.vectorofvector.VectorOfVectors`
-and :class:`lgdo.types.table.Table` into an output LH5 file.
+:class:`~lgdo.types.array.Array`, :class:`~lgdo.types.vectorofvector.VectorOfVectors`
+and :class:`~lgdo.types.table.Table` into an output LH5 file.
 
 Concatenate all eligible objects in ``file{1,2}.lh5`` into ``concat.lh5``: ::
 

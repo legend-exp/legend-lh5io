@@ -268,7 +268,7 @@ def _h5_read_struct(
 
     # determine fields to be read out
     all_fields = dtypeutils.get_struct_fields(attrs["datatype"])
-    selected_fields = utils.eval_field_mask(field_mask, all_fields)
+    selected_fields = utils.eval_field_mask(field_mask, all_fields, fname, oname)
 
     # modify datatype in attrs if a field_mask was used
     attrs["datatype"] = (
@@ -316,7 +316,7 @@ def _h5_read_table(
 
     # determine fields to be read out
     all_fields = dtypeutils.get_struct_fields(attrs["datatype"])
-    selected_fields = utils.eval_field_mask(field_mask, all_fields)
+    selected_fields = utils.eval_field_mask(field_mask, all_fields, fname, oname)
 
     # modify datatype in attrs if a field_mask was used
     attrs["datatype"] = "table{" + ",".join(field for field, _ in selected_fields) + "}"

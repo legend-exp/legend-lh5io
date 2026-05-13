@@ -42,10 +42,13 @@ def build_field_mask(field_mask: Mapping[str, bool] | Collection[str]) -> defaul
 
 
 def eval_field_mask(
-    field_mask: defaultdict, all_fields: list[str]
-) -> list[tuple(str, defaultdict)]:
+    field_mask: defaultdict,
+    all_fields: list[str],
+    fname: str | None = None,
+    oname: str | None = None,
+) -> list[tuple[str, defaultdict | None]]:
     """Get list of fields that need to be loaded along with a sub-field-mask
-    in case we have a nested Table"""
+    for any nested ``Struct`` or ``Table``."""
 
     if field_mask is None:
         return all_fields
@@ -79,6 +82,24 @@ def eval_field_mask(
                 )
 
             this_field_mask[field] |= val
+
+    available = set(all_fields)
+    for field in this_field_mask:
+        if field not in available:
+            if fname and oname:
+                location = f"{fname}[{oname}]"
+            elif fname:
+                location = fname
+            elif oname:
+                location = oname
+            else:
+                location = "object"
+            log.warning(
+                "field %r specified in field_mask not found in %s (known fields: %s)",
+                field,
+                location,
+                all_fields,
+            )
 
     return [
         (field, sub_field_masks.get(field))
@@ -202,7 +223,7 @@ def read_size_in_bytes(h5o, fname, oname, field_mask=None):
         # read out each of the fields
         size = 0
         all_fields = datatype.get_struct_fields(type_attr)
-        selected_fields = eval_field_mask(field_mask, all_fields)
+        selected_fields = eval_field_mask(field_mask, all_fields, fname, oname)
         for field, submask in selected_fields:
             obj = h5py.h5o.open(h5o, field.encode())
             size += read_size_in_bytes(obj, fname, field, submask)

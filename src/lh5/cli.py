@@ -64,6 +64,7 @@ def lh5ls(args=None):
     args = parser.parse_args(args)
 
     if args.verbose:
+        lgdogging.setup(logging.DEBUG, logging.getLogger("lh5"))
         lgdogging.setup(logging.DEBUG, logging.getLogger("lgdo"))
     elif args.debug:
         lgdogging.setup(logging.DEBUG, logging.root)
@@ -164,6 +165,7 @@ Exclude the /data/table1/col1 Table column:
     args = parser.parse_args(args)
 
     if args.verbose:
+        lgdogging.setup(logging.INFO, logging.getLogger("lh5"))
         lgdogging.setup(logging.INFO, logging.getLogger("lgdo"))
     elif args.debug:
         lgdogging.setup(logging.DEBUG, logging.root)
@@ -276,6 +278,7 @@ Include only specific paths:
     args = parser.parse_args(args)
 
     if args.verbose:
+        lgdogging.setup(logging.INFO, logging.getLogger("lh5"))
         lgdogging.setup(logging.INFO, logging.getLogger("lgdo"))
     elif args.debug:
         lgdogging.setup(logging.DEBUG, logging.root)

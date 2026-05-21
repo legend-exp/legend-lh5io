@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import fnmatch
 import logging
+from contextlib import nullcontext
 
 from lgdo.types import Array, Scalar, Struct, Table, VectorOfVectors
+from rich import progress as rich_progress
 
 from .iterator import LH5Iterator
 from .store import LH5Store
@@ -148,6 +150,7 @@ def lh5concat(
     *,
     include_list: list | None = None,
     exclude_list: list | None = None,
+    progress: bool = False,
 ) -> None:
     """Concatenate LGDO Arrays, VectorOfVectors and Tables in LH5 files.
 
@@ -161,6 +164,8 @@ def lh5concat(
         patterns for tables to include.
     exclude_list
         patterns for tables to exclude.
+    progress
+        if ``True``, display a progress bar.
     """
 
     if len(lh5_files) < 2:
@@ -178,38 +183,64 @@ def lh5concat(
     lgdos, lgdo_structs = _get_lgdos(lh5_files[0], obj_list)
     first_done = False
     store = LH5Store()
+    n_files = len(lh5_files)
 
-    # loop over lgdo objects
-    for lgdo in lgdos:
-        # iterate over the files
-        for lh5_obj in LH5Iterator(lh5_files, lgdo):
-            data = {lgdo: lh5_obj}
+    prog_ctx = (
+        rich_progress.Progress(
+            rich_progress.SpinnerColumn(),
+            rich_progress.TextColumn("{task.description}"),
+            rich_progress.BarColumn(),
+            rich_progress.TaskProgressColumn(),
+            rich_progress.MofNCompleteColumn(),
+            rich_progress.TimeElapsedColumn(),
+            rich_progress.TimeRemainingColumn(compact=True),
+        )
+        if progress
+        else nullcontext()
+    )
 
-            # remove the nested fields
-            _remove_nested_fields(data, obj_list)
+    with prog_ctx as prog:
+        task = None
+        if prog is not None:
+            total_rows = sum(len(LH5Iterator(lh5_files, name)) for name in lgdos)
+            task = prog.add_task("Concatenating...", total=total_rows)
 
-            if first_done is False:
-                msg = f"creating output file {output}"
-                log.info(msg)
+        # loop over lgdo objects
+        for lgdo in lgdos:
+            if prog is not None:
+                prog.update(task, description=lgdo)
 
-                store.write(
-                    data[lgdo],
-                    lgdo,
-                    output,
-                    wo_mode="overwrite_file"
-                    if (overwrite and not first_done)
-                    else "write_safe",
-                )
-                first_done = True
+            # iterate over files one at a time to track per-file progress
+            for i_file, lh5_file in enumerate(lh5_files):
+                file_tag = f"[{i_file + 1}/{n_files}] {lh5_file}"
 
-            else:
-                msg = f"appending to {output}"
-                log.info(msg)
+                for lh5_obj in LH5Iterator([lh5_file], lgdo):
+                    data = {lgdo: lh5_obj}
 
-                if isinstance(data[lgdo], Table):
-                    _inplace_table_filter(lgdo, data[lgdo], obj_list)
+                    # remove the nested fields
+                    _remove_nested_fields(data, obj_list)
 
-                store.write(data[lgdo], lgdo, output, wo_mode="append")
+                    if first_done is False:
+                        log.info("creating output file %s (%s)", output, file_tag)
+
+                        store.write(
+                            data[lgdo],
+                            lgdo,
+                            output,
+                            wo_mode="overwrite_file" if overwrite else "write_safe",
+                        )
+                        first_done = True
+
+                    else:
+                        log.info("appending to %s (%s)", output, file_tag)
+
+                        if isinstance(data[lgdo], Table):
+                            _inplace_table_filter(lgdo, data[lgdo], obj_list)
+
+                        store.write(data[lgdo], lgdo, output, wo_mode="append")
+
+                    if prog is not None:
+                        prog.advance(task, len(lh5_obj))
 
     if lgdo_structs != {}:
         output_file = store.gimme_file(output, mode="a")

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import sys
 
 import lgdo
 import lgdo.logging as lgdogging  # eheheh
@@ -176,6 +177,7 @@ Exclude the /data/table1/col1 Table column:
         output=args.output,
         include_list=args.include,
         exclude_list=args.exclude,
+        progress=sys.stdout.isatty(),
     )
 
 

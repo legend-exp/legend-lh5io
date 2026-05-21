@@ -191,7 +191,7 @@ def lh5concat(
             rich_progress.TextColumn("{task.description}"),
             rich_progress.BarColumn(),
             rich_progress.TaskProgressColumn(),
-            rich_progress.MofNCompleteColumn(),
+            rich_progress.TextColumn("{task.completed:.0f}/{task.total:.0f} rows"),
             rich_progress.TimeElapsedColumn(),
             rich_progress.TimeRemainingColumn(compact=True),
         )
@@ -202,7 +202,14 @@ def lh5concat(
     with prog_ctx as prog:
         task = None
         if prog is not None:
-            total_rows = sum(len(LH5Iterator(lh5_files, name)) for name in lgdos)
+            total_rows = 0
+            for name in lgdos:
+                for f in lh5_files:
+                    h5f = store.gimme_file(f, "r")
+                    present = name in h5f
+                    h5f.close()
+                    if present:
+                        total_rows += len(LH5Iterator([f], name))
             task = prog.add_task("Concatenating...", total=total_rows)
 
         # loop over lgdo objects
@@ -221,6 +228,11 @@ def lh5concat(
                     log.warning("object '%s' not found in %s, skipping", lgdo, lh5_file)
                     continue
 
+                if first_done:
+                    log.info("appending to %s (%s)", output, file_tag)
+                else:
+                    log.info("creating output file %s (%s)", output, file_tag)
+
                 for lh5_obj in LH5Iterator([lh5_file], lgdo):
                     data = {lgdo: lh5_obj}
 
@@ -228,8 +240,6 @@ def lh5concat(
                     _remove_nested_fields(data, obj_list)
 
                     if first_done is False:
-                        log.info("creating output file %s (%s)", output, file_tag)
-
                         store.write(
                             data[lgdo],
                             lgdo,
@@ -239,8 +249,6 @@ def lh5concat(
                         first_done = True
 
                     else:
-                        log.info("appending to %s (%s)", output, file_tag)
-
                         if isinstance(data[lgdo], Table):
                             _inplace_table_filter(lgdo, data[lgdo], obj_list)
 

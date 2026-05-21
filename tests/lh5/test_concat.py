@@ -166,6 +166,75 @@ def test_concat(lgnd_test_data, tmptestdir):
         concat.lh5concat(output=outfile, lh5_files=[infile1], overwrite=True)
 
 
+def test_concat_missing_object(tmptestdir):
+    infile1 = f"{tmptestdir}/missing_in1.lh5"
+    infile2 = f"{tmptestdir}/missing_in2.lh5"
+    outfile = f"{tmptestdir}/missing_out.lh5"
+
+    store = lh5.LH5Store()
+
+    # file1 has two tables: a and b
+    store.write(
+        types.Table({"x": types.Array(np.array([1, 2, 3]))}),
+        "a",
+        infile1,
+        wo_mode="overwrite_file",
+    )
+    store.write(
+        types.Table({"y": types.Array(np.array([4, 5, 6]))}),
+        "b",
+        infile1,
+        wo_mode="append",
+    )
+
+    # file2 only has table a (b is absent)
+    store.write(
+        types.Table({"x": types.Array(np.array([7, 8, 9]))}),
+        "a",
+        infile2,
+        wo_mode="overwrite_file",
+    )
+
+    # should not crash; b from file2 is skipped with a WARNING
+    concat.lh5concat(output=outfile, lh5_files=[infile1, infile2], overwrite=True)
+
+    result_a = store.read("a", outfile)
+    assert len(result_a) == 6
+    assert np.array_equal(result_a["x"].nda, np.array([1, 2, 3, 7, 8, 9]))
+
+    result_b = store.read("b", outfile)
+    assert len(result_b) == 3
+    assert np.array_equal(result_b["y"].nda, np.array([4, 5, 6]))
+
+
+def test_concat_progress(tmptestdir):
+    infile1 = f"{tmptestdir}/prog_in1.lh5"
+    infile2 = f"{tmptestdir}/prog_in2.lh5"
+    outfile = f"{tmptestdir}/prog_out.lh5"
+
+    store = lh5.LH5Store()
+    store.write(
+        types.Table({"x": types.Array(np.array([1, 2, 3]))}),
+        "tab",
+        infile1,
+        wo_mode="overwrite_file",
+    )
+    store.write(
+        types.Table({"x": types.Array(np.array([4, 5, 6]))}),
+        "tab",
+        infile2,
+        wo_mode="overwrite_file",
+    )
+
+    concat.lh5concat(
+        output=outfile, lh5_files=[infile1, infile2], overwrite=True, progress=True
+    )
+
+    result = store.read("tab", outfile)
+    assert len(result) == 6
+    assert np.array_equal(result["x"].nda, np.array([1, 2, 3, 4, 5, 6]))
+
+
 def test_concat_empty(tmptestdir):
     infile1 = f"{tmptestdir}/in1.lh5"
     tab1 = types.Table({"a": types.Array(np.array([]))})

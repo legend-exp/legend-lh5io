@@ -70,6 +70,7 @@ def lh5ls(args=None):
         lgdogging.setup(logging.DEBUG, logging.root)
     else:
         lgdogging.setup()
+        lgdogging.setup(logging.WARNING, logging.getLogger("lh5"))
 
     io.show(
         args.lh5_file,
@@ -170,6 +171,7 @@ Exclude the /data/table1/col1 Table column:
         lgdogging.setup(logging.DEBUG, logging.root)
     else:
         lgdogging.setup()
+        lgdogging.setup(logging.WARNING, logging.getLogger("lh5"))
 
     lh5concat(
         lh5_files=args.lh5_file,
@@ -177,7 +179,7 @@ Exclude the /data/table1/col1 Table column:
         output=args.output,
         include_list=args.include,
         exclude_list=args.exclude,
-        progress=sys.stdout.isatty(),
+        progress=sys.stderr.isatty() and not args.verbose and not args.debug,
     )
 
 
@@ -283,6 +285,7 @@ Include only specific paths:
         lgdogging.setup(logging.DEBUG, logging.root)
     else:
         lgdogging.setup()
+        lgdogging.setup(logging.WARNING, logging.getLogger("lh5"))
 
     # parse length_or_slice: could be an integer or a slice like "10:50"
     length_or_slice: int | slice

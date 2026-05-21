@@ -214,6 +214,13 @@ def lh5concat(
             for i_file, lh5_file in enumerate(lh5_files):
                 file_tag = f"[{i_file + 1}/{n_files}] {lh5_file}"
 
+                h5f = store.gimme_file(lh5_file, "r")
+                lgdo_missing = lgdo not in h5f
+                h5f.close()
+                if lgdo_missing:
+                    log.warning("object '%s' not found in %s, skipping", lgdo, lh5_file)
+                    continue
+
                 for lh5_obj in LH5Iterator([lh5_file], lgdo):
                     data = {lgdo: lh5_obj}
 

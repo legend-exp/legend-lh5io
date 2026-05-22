@@ -1,7 +1,8 @@
 """Routines for reading and writing LEGEND Data Objects in HDF5 files.
-Currently the primary on-disk format for LGDO object is LEGEND HDF5 (LH5) files. IO
+
+Currently the primary on-disk format for LGDO objects is LEGEND HDF5 (LH5) files. IO
 is done via the class :class:`.store.LH5Store`. LH5 files can also be
-browsed easily in python like any `HDF5 <https://www.hdfgroup.org>`_ file using
+browsed easily in Python like any `HDF5 <https://www.hdfgroup.org>`_ file using
 `h5py <https://www.h5py.org>`_.
 """
 

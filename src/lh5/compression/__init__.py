@@ -18,9 +18,10 @@ interface for encoding/decoding :class:`~.lgdo.LGDO`\ s.
 
 >>> from lgdo import WaveformTable
 >>> from lh5 import compression
+>>> from lh5.compression import RadwareSigcompress
 >>> wftbl = WaveformTable(...)
->>> enc_wft = compression.encode(wftable, RadwareSigcompress(codec_shift=-23768)
->>> compression.decode(enc_wft) # == wftbl
+>>> enc_wf = compression.encode(wftbl.values, RadwareSigcompress(codec_shift=-23768))
+>>> compression.decode(enc_wf)  # == wftbl.values
 """
 
 from __future__ import annotations

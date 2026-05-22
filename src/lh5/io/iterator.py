@@ -111,7 +111,7 @@ class LH5Iterator(Iterator):
 
             LH5Iterator(
                 ["/path1/*.lh5", "/path2/file.lh5", ["/path3/file1.lh5", "/path3/file2.lh5"]],
-                ["ch1/table", ["ch1/table", "ch2/table"], ["ch1/table, "ch2/table, "ch3/table"]]
+                ["ch1/table", ["ch1/table", "ch2/table"], ["ch1/table", "ch2/table", "ch3/table"]]
             )
 
         Parameters
@@ -120,6 +120,8 @@ class LH5Iterator(Iterator):
             file(s) to read from (see above). May include wildcards and environment variables.
         groups
             HDF5 group(s) to read (see above).
+        base_path
+            directory path prepended to all file names.
         entry_list
             list of entry numbers to read. If a nested list is provided,
             expect one top-level list for each file, containing a list of
@@ -143,7 +145,7 @@ class LH5Iterator(Iterator):
             number of entries in tables yielded by iterator. Can be provided as
             a value with a unit of memory; in this case, use the estimated number
             of rows that will yield tables that require the provided memory.
-            Default to 100*MB.
+            Defaults to ``"100*MB"``.
         file_cache
             maximum number of files to keep open at a time
         ds_map
@@ -166,7 +168,7 @@ class LH5Iterator(Iterator):
             groups, or elements in a dataset, raise an Exception.
         h5py_open_mode
             file open mode used when acquiring file handles. ``r`` (default)
-            opens files read-only while ``a`` allow opening files for
+            opens files read-only while ``a`` allows opening files for
             write-appending as well.
         """
 
@@ -510,7 +512,7 @@ class LH5Iterator(Iterator):
         return self.global_entry_list
 
     def read(self, i_entry: int, n_entries: int | None = None) -> Table:
-        "Read the nextlocal chunk of events, starting at entry."
+        """Read a chunk of events starting at global entry `i_entry`."""
         self.lh5_buffer.resize(0)
 
         if n_entries is None:
@@ -844,7 +846,7 @@ class LH5Iterator(Iterator):
 
     @property
     def current_global_entries(self) -> NDArray[int]:
-        """Return list of local file entries in buffer"""
+        """Return list of global file entries in buffer"""
         cur_entries = np.zeros(len(self.lh5_buffer), dtype="int32")
         i_ds = np.searchsorted(self.entry_map, self.current_i_entry, "right")
         ds_start = self._get_ds_cumentries(i_ds - 1)
@@ -1022,8 +1024,8 @@ class LH5Iterator(Iterator):
             fr._select_datasets(i_beg, i_end)
 
     def _generate_workers(self, n_workers: int):
-        """Create n_workers copy of this iterator, dividing the datasets (file/groups)
-        groups between them. These are intended for parallel use"""
+        """Create `n_workers` copies of this iterator, dividing the datasets (file/group pairs)
+        between them. These are intended for parallel use."""
         i_datasets = np.linspace(0, self.n_datasets, n_workers + 1).astype("int")
         # if we have an entry list, get local entries for all files
         if self.local_entry_list is not None:
@@ -1133,7 +1135,7 @@ class LH5Iterator(Iterator):
             with number of processes equal to ``processes``.
         progress_queue:
             :class:`multiprocessing.Queue` object to which progress information will be
-            communicated back go main process. Return mapping with keys:
+            communicated back to main process. Returns a mapping with keys:
             - task_id: the job_id passed to this function
             - total: total number of datasets to be processed
             - completed: number of datasets that have been processed
@@ -1250,7 +1252,7 @@ class LH5Iterator(Iterator):
             to ``executor`` (if provided), or else do not parallelize
         executor:
             :class:`concurrent.futures.Executor` object for managing parallelism.
-            If ``None``, create a :class:`concurrent.futures.rocessPoolExecutor`
+            If ``None``, create a :class:`concurrent.futures.ProcessPoolExecutor`
             with number of processes equal to ``processes``.
         library:
             library to convert the columns to when using a string expression for ``where``.
@@ -1340,10 +1342,10 @@ class LH5Iterator(Iterator):
         --------
         Build a 1D histogram of values in ``col3`` with a string selection::
 
-            h = lh5_it.query(
-                hist.axis.RegularAxis(100, 0, 500, label="col3")
-                where = "(col1 == 0) & (col2 > 100)",
-                keys = "col3"
+            h = lh5_it.hist(
+                hist.axis.Regular(100, 0, 500, label="col3"),
+                where="(col1 == 0) & (col2 > 100)",
+                keys="col3",
             )
 
         Build a 2D histogram with a value axis and string-category axis after
@@ -1353,10 +1355,10 @@ class LH5Iterator(Iterator):
                 ...process data
                 return value, category
 
-            h = lh5_it
-                [hist.axis.RegularAxis(100, 0, 500, label="Value"),
+            h = lh5_it.hist(
+                [hist.axis.Regular(100, 0, 500, label="Value"),
                  hist.axis.StrCategory([], growth=True, label="Category")],
-                 where = get_val,
+                where=get_val,
             )
 
         Parameters
@@ -1388,7 +1390,7 @@ class LH5Iterator(Iterator):
             to ``executor`` (if provided), or else do not parallelize
         executor:
             :class:`concurrent.futures.Executor` object for managing parallelism.
-            If ``None``, create a :class:`concurrent.futures.rocessPoolExecutor`
+            If ``None``, create a :class:`concurrent.futures.ProcessPoolExecutor`
             with number of processes equal to ``processes``.
         progress:
             if ``True`` draw progress bar; can also provide an existing rich ``Progress``
@@ -1435,7 +1437,7 @@ def _identity(val, _):
 
 
 def _append_copy(list, val):
-    "Helper for aggregating tables in query"
+    """Helper for aggregating tables in query"""
     list.append(deepcopy(val))
 
 
@@ -1450,7 +1452,7 @@ def _map_helper(
     *,
     progress_queue: Queue = None,
 ):
-    "Helper for executing int, begin and terminate functions when calling map"
+    """Helper for executing init, begin and terminate functions when calling map"""
     if progress_queue is not None:
         progress_queue.put(
             {
@@ -1525,7 +1527,7 @@ def _map_helper(
 
 @dataclass
 class _table_query:
-    "Helper for when query is called on a string"
+    """Helper for when query is called on a string"""
 
     expr: str
     library: str
@@ -1537,7 +1539,7 @@ class _table_query:
             self.fields = dict.fromkeys(self.fields)
 
     def __call__(self, tab, _):
-        "Evaluate selection and return selected elements"
+        """Evaluate selection and return selected elements"""
         args = {f: a.view_as("ak", with_units=False) for f, a in tab.items()}
         if self.fields is not None:
             for k, v in self.fields.items():
@@ -1565,7 +1567,7 @@ class _table_query:
 
 
 class _hist_filler:
-    "Helper for filling histogram"
+    """Helper for filling histogram"""
 
     def __init__(self, keys):
         if keys is not None:
@@ -1614,13 +1616,15 @@ class MapProgress(Thread):
         update_period: float = 0.1,
     ):
         """
-        tasks:
+        Parameters
+        ----------
+        tasks
             list of descriptions to prepend to progress bars. Can also provide the number of
-            tasks, in which case description will be set to "#i"
-        progress:
+            tasks, in which case description will be set to ``"#i"``.
+        prog
             rich Progress or Console object to add bars to. Use to customize the bar.
-        update_period:
-            frequency in s to update progress bars.
+        update_period
+            frequency in seconds to update progress bars.
         """
         if isinstance(prog, progress.Progress):
             self.progress = prog

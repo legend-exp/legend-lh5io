@@ -190,7 +190,7 @@ def read_n_rows(h5o, fname, oname):
 
 
 def read_size_in_bytes(h5o, fname, oname, field_mask=None):
-    """Read number size in LH5 object in memory (in B)"""
+    """Read size of LH5 object in memory (in bytes)."""
     if not h5py.h5a.exists(h5o, b"datatype"):
         msg = "missing 'datatype' attribute"
         raise LH5DecodeError(msg, fname, oname)

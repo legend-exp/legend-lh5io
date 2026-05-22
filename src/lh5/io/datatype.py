@@ -27,7 +27,7 @@ _lgdo_datatype_map: dict[str, types.LGDO] = OrderedDict(
         (types.Array, r"^array<\d+>\{.+\}$"),
     ]
 )
-"""Mapping between LGDO types and regular expression defining the corresponding datatype string"""
+"""Mapping between LGDO types and regular expressions defining the corresponding datatype string."""
 
 
 def datatype(expr: str) -> type:

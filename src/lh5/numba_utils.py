@@ -11,8 +11,10 @@ log = logging.getLogger(__name__)
 
 
 def getenv_bool(name: str, default: bool = False) -> bool:
-    """Get environment value as a boolean, returning True for 1, t and true
-    (caps-insensitive), and False for any other value and default if undefined.
+    """Get environment variable value as a boolean.
+
+    Returns ``True`` for ``1``, ``t`` and ``true`` (case-insensitive), ``False``
+    for any other value, and `default` if the variable is undefined.
     """
     val = os.getenv(name)
     if not val:
@@ -21,8 +23,8 @@ def getenv_bool(name: str, default: bool = False) -> bool:
 
 
 class NumbaDefaults(MutableMapping):
-    """Bare-bones class to store some Numba default options. Defaults values
-    are set from environment variables
+    """Bare-bones class to store some Numba default options. Default values
+    are set from environment variables.
 
     Examples
     --------
@@ -31,20 +33,20 @@ class NumbaDefaults(MutableMapping):
 
     >>> from numba import guvectorize
     >>> from lh5.numba_utils import numba_defaults_kwargs as nb_kwargs
-    >>> @guvectorize([], "", **nb_kwargs, nopython=True) # def proc(...): ...
+    >>> @guvectorize([], "", **nb_kwargs(nopython=True))  # def proc(...): ...
 
     Customize one argument but still set defaults for the others:
 
-    >>> from lh5.numba_utils import numba_defaults as nb_defaults
-    >>> @guvectorize([], "", **nb_defaults(cache=False) # def proc(...): ...
+    >>> from lh5.numba_utils import numba_defaults_kwargs as nb_kwargs
+    >>> @guvectorize([], "", **nb_kwargs(cache=False))  # def proc(...): ...
 
     Override global options at runtime:
 
     >>> from lh5.numba_utils import numba_defaults
-    >>> # must set options before explicitly importing lgdo modules!
+    >>> # must set options before explicitly importing lh5 modules!
     >>> numba_defaults.cache = False
     >>> numba_defaults.boundscheck = True
-    >>> from lgdo import compression # imports of numbified functions happen here
+    >>> from lh5 import compression  # imports of numba-compiled functions happen here
     >>> compression.encode(...)
     """
 

@@ -151,7 +151,7 @@ def decode(
     | lgdo.ArrayOfEncodedEqualSizedArrays,
     sig_out: NDArray | lgdo.ArrayOfEqualSizedArrays = None,
 ) -> (NDArray, NDArray[uint32]) | lgdo.VectorOfVectors | lgdo.ArrayOfEqualSizedArrays:
-    """Deompress digital signal(s) with a variable-length encoding of its derivative.
+    """Decompress digital signal(s) with a variable-length encoding of its derivative.
 
     Wraps :func:`uleb128_zigzag_diff_array_decode` and adds support for decoding
     LGDOs.
@@ -256,7 +256,7 @@ def decode(
         # sanity check
         assert np.array_equal(sig_in.decoded_size, siglen)
 
-        # converto to VOV before returning
+        # convert to VOV before returning
         return sig_out.to_vov(np.cumsum(siglen, dtype=uint32))
 
     msg = "unsupported input signal type"

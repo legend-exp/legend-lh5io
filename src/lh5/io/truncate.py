@@ -58,11 +58,12 @@ def map_lgdo_arrays(
     include_list: list[str] | None = None,
     exclude_list: list[str] | None = None,
 ) -> LGDO | None:
-    """Map a function acting on awkward arrays contained in the lgdo tree on the tree.
+    """Map a function acting on awkward arrays contained in the LGDO tree onto the tree.
+
     The tree structure itself is not altered (compare to map in functional languages),
     except if branches are excluded (explicitly or because they are not in the
-    include_list passed).
-    Also, attributes are propagated unchanged."""
+    include_list passed). Attributes are propagated unchanged.
+    """
     if not _is_included(name, include_list=include_list, exclude_list=exclude_list):
         msg = f"{name} does not match pattern incl={include_list}, excl={exclude_list}"
         log.debug(msg)
@@ -146,8 +147,10 @@ def map_lgdo_arrays_on_file(
     include_list: list | None = None,
     exclude_list: list | None = None,
 ) -> None:
-    """Run function func on all vectorofvectors and all arrays in the file.
-    1st arg of func is the name of the lgdo, 2nd is the array within.
+    """Run `func` on all VectorOfVectors and all arrays in the file.
+
+    The first argument passed to `func` is the name of the LGDO, the second is
+    the awkward array contained within.
     """
 
     # list of root lgdo names. Actually 2nd level, since / is the real root.

@@ -1,4 +1,4 @@
-"""legend-pydataobj's command line interface utilities."""
+"""legend-lh5io's command line interface utilities."""
 
 from __future__ import annotations
 

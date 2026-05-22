@@ -52,7 +52,7 @@ def read(
         actual number of rows read will be returned as one of the return
         values (see below).
     idx
-        For NumPy-style "fancying indexing" for the read to select only
+        For NumPy-style "fancy indexing" for the read to select only
         some rows, e.g. after applying some cuts to particular columns.
         Only selection along the first axis is supported, so tuple
         arguments must be one-tuples.  A 2D array of shape (N, 2) can be.
@@ -274,13 +274,13 @@ def write(
     `compression` attribute.
 
     Note
-    ----------
+    ----
     The `compression` LGDO attribute takes precedence over the default HDF5
     compression settings. The `hdf5_settings` attribute takes precedence
     over `compression`. These attributes are not written to disk.
 
     Note
-    ----------
+    ----
     HDF5 compression is skipped for the `encoded_data.flattened_data`
     dataset of :class:`.VectorOfEncodedVectors` and
     :class:`.ArrayOfEncodedEqualSizedArrays`.
@@ -288,7 +288,7 @@ def write(
     Parameters
     ----------
     obj
-        LH5 object. if object is array-like, writes `n_rows` starting from
+        LH5 object. If object is array-like, writes `n_rows` starting from
         `start_row` in `obj`.
     name
         name of the object in the output HDF5 file.
@@ -311,7 +311,7 @@ def write(
           starting from `write_start`. Note: overwriting with `write_start` =
           end of array is the same as ``append``.
         - ``overwrite_file`` or ``of``: delete file if present prior to
-          writing to it. `write_start` should be 0 (its ignored).
+          writing to it. `write_start` should be 0 (it's ignored).
         - ``append_column`` or ``ac``: append fields/columns from an
           :class:`~.lgdo.struct.Struct` `obj` (and derived types such as
           :class:`~.lgdo.table.Table`) only if there is an existing
@@ -323,15 +323,15 @@ def write(
         row in the output file (if already existing) to start overwriting
         from.
     page_buffer
-        enable paged aggregation with a buffer of this size in bytes
+        enable paged aggregation with a buffer of this size in bytes.
         Only used when creating a new file. Useful when writing a file
         with a large number of small datasets. This is a short-hand for
-        ``(fs_stragety="page", fs_pagesize=[page_buffer])``
+        ``(fs_strategy="page", fs_page_size=page_buffer)``
     **h5py_kwargs
         additional keyword arguments forwarded to
         :meth:`h5py.Group.create_dataset` to specify, for example, an HDF5
         compression filter to be applied before writing non-scalar
-        datasets. **Note: `compression` Ignored if compression is specified
+        datasets. **Note: `compression` ignored if compression is specified
         as an `obj` attribute.**
     """
 

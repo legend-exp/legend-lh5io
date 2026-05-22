@@ -26,7 +26,7 @@ class RadwareSigcompress(WaveformCodec):
 
     Examples
     --------
-    >>> from lgdo.compression import RadwareSigcompress
+    >>> from lh5.compression import RadwareSigcompress
     >>> codec = RadwareSigcompress(codec_shift=-32768)
     """
 
@@ -223,7 +223,7 @@ def decode(
     if isinstance(sig_in, tuple):
         s = sig_in[0].shape
         if sig_out is None:
-            # allocate output array with lasd dim as large as the longest
+            # allocate output array with last dim as large as the longest
             # uncompressed wf
             maxs = np.max(_get_hton_u16(sig_in[0], 0))
             sig_out = np.empty((*s[:-1], maxs), dtype=int32)
@@ -295,7 +295,7 @@ def decode(
         # sanity check
         assert np.array_equal(sig_in.decoded_size, siglen)
 
-        # converto to VOV before returning
+        # convert to VOV before returning
         return sig_out.to_vov(np.cumsum(siglen, dtype=uint32))
 
     msg = "unsupported input signal type"
@@ -410,12 +410,8 @@ def _radware_sigcompress_encode(
     shift
         value to be added to `sig_in` before compression.
     siglen
-        array that will hold the lengths of the compressed signals.
-
-    Returns
-    -------
-    length
-        number of bytes in the encoded signal
+        output array; ``siglen[0]`` is set to the number of bytes in the
+        encoded signal.
     """
     mask = _mask
     shift = shift[0]
@@ -576,7 +572,7 @@ def _radware_sigcompress_decode(
     siglen: uint32,
     _mask: NDArray[uint16] = _radware_sigcompress_mask,
 ) -> None:
-    """Deompress a digital signal.
+    """Decompress a digital signal.
 
     After decoding, the signal values are shifted by ``-shift`` to restore the
     original waveform. The dtype of `sig_out` must be large enough to contain it.
@@ -597,11 +593,9 @@ def _radware_sigcompress_decode(
     shift
         the value the original signal(s) was shifted before compression.  The
         value is *subtracted* from samples in `sig_out` right after decoding.
-
-    Returns
-    -------
-    length
-        length of output, decompressed signal.
+    siglen
+        output array; ``siglen[0]`` is set to the length (number of samples)
+        of the decompressed signal.
     """
     mask = _mask
     shift = shift[0]

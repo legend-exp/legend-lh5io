@@ -1,5 +1,5 @@
 """
-This module implements routines from reading and writing LEGEND Data Objects in
+This module implements routines for reading and writing LEGEND Data Objects in
 HDF5 files.
 """
 
@@ -31,9 +31,9 @@ class LH5Store:
 
     Examples
     --------
-    >>> from lgdo import LH5Store
+    >>> from lh5 import LH5Store
     >>> store = LH5Store()
-    >>> obj, _ = store.read("/geds/waveform", "file.lh5")
+    >>> obj = store.read("/geds/waveform", "file.lh5")
     >>> type(obj)
     lgdo.waveformtable.WaveformTable
     """
@@ -101,10 +101,10 @@ class LH5Store:
             mode in which to open file. See :class:`h5py.File` documentation. If
             ``None``, use default provided at construction
         page_buffer
-            enable paged aggregation with a buffer of this size in bytes
+            enable paged aggregation with a buffer of this size in bytes.
             Only used when creating a new file. Useful when writing a file
             with a large number of small datasets. This is a short-hand for
-            ``(fs_stragety="page", fs_pagesize=[page_buffer])``
+            ``(fs_strategy="page", fs_page_size=page_buffer)``
         file_kwargs
             Keyword arguments for :class:`h5py.File`
         """
@@ -304,7 +304,7 @@ class LH5Store:
         return utils.read_n_rows(name, self.gimme_file(lh5_file, "r"))
 
     def read_size_in_bytes(self, name: str, lh5_file: str | Path | h5py.File) -> int:
-        """Look up the size (in B) of the object in memory. Will recursively
-        crawl through all objects in a Struct or Table
+        """Look up the size (in bytes) of the object in memory. Will recursively
+        crawl through all objects in a Struct or Table.
         """
         return utils.read_size_in_bytes(name, self.gimme_file(lh5_file, "r"))

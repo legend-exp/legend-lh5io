@@ -48,8 +48,8 @@ def decode(
     """Decode encoded LGDOs.
 
     Defines decoding behaviors for each implemented waveform encoding
-    algorithm. Expects to find the codec (and its parameters) the arrays where
-    encoded with among the LGDO attributes.
+    algorithm. The codec (and its parameters) used to encode the arrays must
+    be stored among the LGDO attributes.
 
     Parameters
     ----------

@@ -57,7 +57,7 @@ def _get_obj_list(
 
 
 def _get_lgdos(file, obj_list):
-    """Get name of LGDO objects."""
+    """Get names of array-like LGDO objects present in the file."""
 
     store = LH5Store()
     h5f0 = store.gimme_file(file)
@@ -113,7 +113,7 @@ def _get_lgdos(file, obj_list):
 
 
 def _inplace_table_filter(name, table, obj_list):
-    """filter objects nested in this LGDO"""
+    """Filter objects nested in this LGDO."""
     skm = fnmatch.filter(obj_list, f"{name}/*")
     kept = {it.removeprefix(name).strip("/").split("/")[0] for it in skm}
 
@@ -159,7 +159,9 @@ def lh5concat(
     lh5_files
         list of input files to concatenate.
     output
-        path to the output file
+        path to the output file.
+    overwrite
+        if ``True``, overwrite the output file if it already exists.
     include_list
         patterns for tables to include.
     exclude_list

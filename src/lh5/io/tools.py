@@ -22,7 +22,6 @@ def ls(
     """Return a list of LH5 groups in the input file and group, similar
     to ``ls`` or ``h5ls``. Supports wildcards in group names.
 
-
     Parameters
     ----------
     lh5_file

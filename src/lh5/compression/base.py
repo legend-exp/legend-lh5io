@@ -13,7 +13,7 @@ class WaveformCodec:
 
     Note
     ----
-    This is an abstract type. The user must provided a concrete subclass.
+    This is an abstract type. The user must provide a concrete subclass.
     """
 
     @property

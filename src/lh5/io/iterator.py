@@ -544,16 +544,18 @@ class LH5Iterator(Iterator):
 
             i_local = local_i_entry if local_idx is None else local_idx[local_i_entry]
 
+            buf_start = len(self.lh5_buffer)
+
             if len(self.field_mask) > 0 or not isinstance(self.lh5_buffer, Table):
                 self.lh5_buffer = self.lh5_st.read(
                     self.get_group(i_ds),
                     self.get_file(i_ds),
                     start_row=i_local,
-                    n_rows=n_entries - len(self.lh5_buffer),
+                    n_rows=n_entries - buf_start,
                     idx=local_idx,
                     field_mask=self.field_mask,
                     obj_buf=self.lh5_buffer,
-                    obj_buf_start=len(self.lh5_buffer),
+                    obj_buf_start=buf_start,
                 )
             else:
                 self.lh5_buffer.resize(
@@ -563,7 +565,7 @@ class LH5Iterator(Iterator):
             if self.group_data is not None:
                 data = self.get_group_data(i_ds)
                 for f in data.fields:
-                    self.lh5_buffer[f][i_local:] = data[f]
+                    self.lh5_buffer[f][buf_start:] = data[f]
 
             i_ds += 1
             local_i_entry = 0

@@ -12,7 +12,7 @@ from hist import axis
 from lgdo import Array, Table, WaveformTable
 from rich import console, progress
 
-from lh5 import LH5Iterator, MapProgress, read
+from lh5 import LH5Iterator, LH5Store, MapProgress, read
 
 
 @pytest.fixture(scope="module")
@@ -608,6 +608,49 @@ def test_group_data(more_lgnd_files):
         }
         assert all(tb.chan.nda == ec)
         assert all(tb.type.nda == et)
+
+
+def test_group_data_buffer_boundary(more_lgnd_files):
+    # Regression test: when a buffer-fill cycle spans multiple groups, group_data
+    # must be stamped only over the rows that each group contributed, not from
+    # index 0 (which overwrites earlier groups' labels with the last group's value).
+    groups = ["ch1084803/hit", "ch1084804/hit", "ch1121600/hit"]
+    chans = [1084803, 1084804, 1121600]
+
+    # Derive per-group row counts from the actual files so the test stays valid
+    # if the fixture data changes.
+    store = LH5Store()
+    rows_per_group = [store.read_n_rows(g, more_lgnd_files[2][0]) for g in groups]
+
+    # Choose buffer_len to guarantee that at least one buffer spans a group
+    # boundary: any value strictly between min and sum of per-group counts works.
+    buffer_len = min(rows_per_group) + 1
+    assert buffer_len < sum(rows_per_group), (
+        "fixture data too small to exercise multi-group buffer boundary"
+    )
+
+    lh5_it = LH5Iterator(
+        more_lgnd_files[2],
+        groups,
+        field_mask=["timestamp"],
+        buffer_len=buffer_len,
+        group_data={"chan": chans},
+    )
+
+    # Build the expected channel sequence by simulating the buffer-fill order:
+    # datasets are visited as (file0,g0),(file0,g1),...,(file1,g0),... and each
+    # buffer is filled greedily up to buffer_len across however many groups needed.
+    n_files = len(more_lgnd_files[2])
+    flat_chan = chans * n_files  # one entry per dataset in iteration order
+    flat_rows = rows_per_group * n_files
+    sequence = [c for c, n in zip(flat_chan, flat_rows, strict=True) for _ in range(n)]
+
+    expected_chan = [
+        sequence[i : i + buffer_len] for i in range(0, len(sequence), buffer_len)
+    ]
+
+    for tb, ec in zip(lh5_it, expected_chan, strict=True):
+        assert list(tb.chan.nda) == ec
 
 
 def test_group_data_none(more_lgnd_files):

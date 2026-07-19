@@ -371,7 +371,9 @@ def write(
         datasets. **Note: `compression` ignored if compression is specified
         as an `obj` attribute.**
     """
-    if page_buffer:
+    page_buffer = settings.parse_datasize(page_buffer or 0)
+    fs_page_size = settings.parse_datasize(fs_page_size or 0)
+    if page_buffer > 0:
         msg = (
             "the 'page_buffer' argument of write() is deprecated and sets the "
             "file-space *page size*; use fs_page_size instead"
@@ -380,7 +382,7 @@ def write(
         fs_page_size = fs_page_size or page_buffer
 
     if (
-        fs_page_size
+        fs_page_size > 0
         and isinstance(lh5_file, str)
         and not Path(lh5_file).is_file()
         and wo_mode in ("w", "write_safe", "of", "overwrite_file")
@@ -388,7 +390,7 @@ def write(
         h5py_kwargs.update(
             {
                 "fs_strategy": "page",
-                "fs_page_size": settings.parse_datasize(fs_page_size),
+                "fs_page_size": fs_page_size,
             }
         )
     return _serializers._h5_write_lgdo(

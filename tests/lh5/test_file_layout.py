@@ -8,6 +8,8 @@ reads accept a ``page_buffer``, falling back gracefully on non-paged files.
 
 from __future__ import annotations
 
+import warnings
+
 import h5py
 import numpy as np
 import pytest
@@ -54,6 +56,27 @@ def test_write_page_buffer_alias_warns_and_pages(tmptestdir):
         lh5.write(_make_table(), "tbl", out, wo_mode="overwrite_file", page_buffer=4096)
     strategy, _, _ = _strategy(out)
     assert strategy == h5py.h5f.FSPACE_STRATEGY_PAGE
+
+
+def test_write_string_zero_sizes_stay_fsm(tmptestdir):
+    # "0" is truthy as a string: must still mean "disabled" — no paged
+    # strategy and no deprecation warning
+    for i, kwargs in enumerate([{"fs_page_size": "0"}, {"page_buffer": "0"}]):
+        out = f"{tmptestdir}/zero_str_{i}.lh5"
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            lh5.write(_make_table(), "tbl", out, wo_mode="overwrite_file", **kwargs)
+        strategy, _, _ = _strategy(out)
+        assert strategy == h5py.h5f.FSPACE_STRATEGY_FSM_AGGR
+
+        out = f"{tmptestdir}/zero_str_store_{i}.lh5"
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            lh5.LH5Store().write(
+                _make_table(), "tbl", out, wo_mode="overwrite_file", **kwargs
+            )
+        strategy, _, _ = _strategy(out)
+        assert strategy == h5py.h5f.FSPACE_STRATEGY_FSM_AGGR
 
 
 def test_store_write_defaults_to_fsm(tmptestdir):

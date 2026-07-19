@@ -138,6 +138,7 @@ class LH5Store:
         if mode is None:
             mode = self.default_mode
 
+        fs_page_size = settings.parse_datasize(fs_page_size or 0)
         if mode == "r":
             lh5_file = utils.expand_path(lh5_file, base_path=self.base_path)
             file_kwargs["locking"] = self.locking
@@ -145,14 +146,14 @@ class LH5Store:
             pb = settings.parse_datasize(pb)
             if pb > 0:
                 file_kwargs["page_buf_size"] = pb
-        elif page_buffer:
+        elif page_buffer is not None and settings.parse_datasize(page_buffer) > 0:
             msg = (
                 "passing 'page_buffer' for a file opened in a write mode is "
                 "deprecated and sets the file-space *page size*; use "
                 "fs_page_size instead"
             )
             warn(msg, DeprecationWarning, stacklevel=2)
-            fs_page_size = fs_page_size or page_buffer
+            fs_page_size = fs_page_size or settings.parse_datasize(page_buffer)
 
         if lh5_file in self.files:
             self.files.move_to_end(lh5_file)
@@ -179,11 +180,11 @@ class LH5Store:
         if mode != "r" and file_exists:
             log.debug(f"opening existing file {full_path} in mode '{mode}'")
 
-        if mode == "w" and fs_page_size:
+        if mode == "w" and fs_page_size > 0:
             file_kwargs.update(
                 {
                     "fs_strategy": "page",
-                    "fs_page_size": settings.parse_datasize(fs_page_size),
+                    "fs_page_size": fs_page_size,
                 }
             )
         try:

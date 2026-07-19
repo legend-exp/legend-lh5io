@@ -8,13 +8,14 @@ from collections.abc import Mapping, Sequence
 from contextlib import suppress
 from pathlib import Path
 from typing import Any
+from warnings import warn
 
 import h5py
 import numpy as np
 from lgdo import types
 from numpy.typing import ArrayLike
 
-from . import _serializers
+from . import _serializers, settings
 from .exceptions import LH5DecodeError
 from .utils import read_n_rows
 
@@ -33,6 +34,7 @@ def read(
     obj_buf_start: int = 0,
     decompress: bool = True,
     locking: bool = False,
+    page_buffer: int | str | None = None,
 ) -> types.LGDO | tuple[types.LGDO, int]:
     """Read LH5 object data from a file.
 
@@ -95,6 +97,13 @@ def read(
         built-in filters, which is always decompressed upstream by HDF5.
     locking
         Lock HDF5 file while reading
+    page_buffer
+        buffer size in bytes (or a string like ``"16MiB"``) for HDF5
+        page-buffered reads. Effective only for files written with the
+        paged file-space strategy (see `fs_page_size` in :func:`.write`);
+        other files are silently opened without a buffer. ``None`` uses the
+        :obj:`.settings.DEFAULT_PAGE_BUFFER` (settable via the
+        ``LH5_PAGE_BUFFER`` environment variable); ``0`` disables.
 
     Returns
     -------
@@ -111,8 +120,29 @@ def read(
         except KeyError as oe:
             raise LH5DecodeError(oe, lh5_file, name) from oe
     elif isinstance(lh5_file, (str, Path)):
+        if page_buffer is None:
+            page_buffer = settings.DEFAULT_PAGE_BUFFER
+        page_buffer = settings.parse_datasize(page_buffer)
         try:
-            lh5_file = h5py.File(str(Path(lh5_file)), mode="r", locking=locking)
+            if page_buffer > 0:
+                # page buffering requires the paged file-space strategy; fall
+                # back to a plain open for other files (handled below)
+                try:
+                    lh5_file = h5py.File(
+                        str(Path(lh5_file)),
+                        mode="r",
+                        locking=locking,
+                        page_buf_size=page_buffer,
+                    )
+                except OSError:
+                    log.debug(
+                        "page-buffered open of %s failed (not a paged file?), "
+                        "retrying without page buffer",
+                        lh5_file,
+                    )
+                    lh5_file = h5py.File(str(Path(lh5_file)), mode="r", locking=locking)
+            else:
+                lh5_file = h5py.File(str(Path(lh5_file)), mode="r", locking=locking)
         except (OSError, FileExistsError) as oe:
             raise LH5DecodeError(oe, lh5_file) from oe
 
@@ -196,6 +226,8 @@ def read(
                 obj_buf=obj_buf,
                 obj_buf_start=obj_buf_start_i,
                 decompress=decompress,
+                locking=locking,
+                page_buffer=page_buffer,
             )
 
             if obj_buf is None or (len(obj_buf) - obj_buf_start) >= n_rows:
@@ -245,6 +277,7 @@ def write(
     wo_mode: str = "append",
     write_start: int = 0,
     page_buffer: int = 0,
+    fs_page_size: int | str = 0,
     **h5py_kwargs,
 ) -> None:
     """Write an LGDO into an LH5 file.
@@ -323,10 +356,14 @@ def write(
         row in the output file (if already existing) to start overwriting
         from.
     page_buffer
-        enable paged aggregation with a buffer of this size in bytes.
-        Only used when creating a new file. Useful when writing a file
-        with a large number of small datasets. This is a short-hand for
-        ``(fs_strategy="page", fs_page_size=page_buffer)``
+        deprecated alias for `fs_page_size`.
+    fs_page_size
+        opt in to HDF5's *paged aggregation* file-space strategy with this
+        page size in bytes (or a string like ``"1MiB"``), when creating a
+        new file. Paged files support page-buffered reads (see
+        :func:`.read`); pick a page size at the scale of the dataset chunks
+        so page-alignment padding stays small. By default files are created
+        with the standard (FSM) strategy, which packs allocations tightly.
     **h5py_kwargs
         additional keyword arguments forwarded to
         :meth:`h5py.Group.create_dataset` to specify, for example, an HDF5
@@ -334,16 +371,24 @@ def write(
         datasets. **Note: `compression` ignored if compression is specified
         as an `obj` attribute.**
     """
+    if page_buffer:
+        msg = (
+            "the 'page_buffer' argument of write() is deprecated and sets the "
+            "file-space *page size*; use fs_page_size instead"
+        )
+        warn(msg, DeprecationWarning, stacklevel=2)
+        fs_page_size = fs_page_size or page_buffer
 
     if (
-        isinstance(lh5_file, str)
+        fs_page_size
+        and isinstance(lh5_file, str)
         and not Path(lh5_file).is_file()
         and wo_mode in ("w", "write_safe", "of", "overwrite_file")
     ):
         h5py_kwargs.update(
             {
                 "fs_strategy": "page",
-                "fs_page_size": page_buffer,
+                "fs_page_size": settings.parse_datasize(fs_page_size),
             }
         )
     return _serializers._h5_write_lgdo(

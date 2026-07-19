@@ -12,12 +12,13 @@ from collections.abc import Mapping, Sequence
 from inspect import signature
 from pathlib import Path
 from typing import Any
+from warnings import warn
 
 import h5py
 from lgdo import types
 from numpy.typing import ArrayLike
 
-from . import _serializers, utils
+from . import _serializers, settings, utils
 from .core import read
 from .exceptions import LH5DecodeError
 
@@ -44,6 +45,7 @@ class LH5Store:
         keep_open: bool = False,
         locking: bool = False,
         default_mode: str = "r",
+        page_buffer: int | str | None = None,
     ) -> None:
         """
         Parameters
@@ -60,11 +62,23 @@ class LH5Store:
             default mode in which to open files with this ``LH5Store``. See
             :class:`h5py.File` documentation. If default_mode is ``"r"``, use
             ``"a"`` when calling `LH5Store.write`.
+        page_buffer
+            default page-buffer size in bytes (or a string like ``"16MiB"``)
+            used when this store opens files for reading. Effective only for
+            files written with the paged file-space strategy; other files
+            are silently opened without a buffer. ``None`` uses
+            :obj:`.settings.DEFAULT_PAGE_BUFFER` (settable via the
+            ``LH5_PAGE_BUFFER`` environment variable). Note that the store
+            caches open files by path, so the first open of a file decides
+            its buffering for the lifetime of the cache entry.
         """
         base_path = str(Path(base_path)) if base_path != "" else ""
         self.base_path = "" if base_path == "" else utils.expand_path(base_path)
         self.keep_open = keep_open
         self.locking = locking
+        if page_buffer is None:
+            page_buffer = settings.DEFAULT_PAGE_BUFFER
+        self.page_buffer = settings.parse_datasize(page_buffer)
         self.files = OrderedDict()
 
         if default_mode == "read":
@@ -88,7 +102,8 @@ class LH5Store:
         self,
         lh5_file: str | Path | h5py.File,
         mode: str = None,
-        page_buffer: int = 0,
+        page_buffer: int | str | None = None,
+        fs_page_size: int | str = 0,
         **file_kwargs,
     ) -> h5py.File:
         """Returns a :mod:`h5py` file object from the store or creates a new one.
@@ -101,10 +116,17 @@ class LH5Store:
             mode in which to open file. See :class:`h5py.File` documentation. If
             ``None``, use default provided at construction
         page_buffer
-            enable paged aggregation with a buffer of this size in bytes.
-            Only used when creating a new file. Useful when writing a file
-            with a large number of small datasets. This is a short-hand for
-            ``(fs_strategy="page", fs_page_size=page_buffer)``
+            page-buffer size in bytes (or a string like ``"16MiB"``) used
+            when opening a file for reading; effective only for files
+            written with the paged file-space strategy, other files fall
+            back to an unbuffered open. ``None`` uses the store default.
+            When passed for a file opened in a *write* mode, it is a
+            deprecated alias for `fs_page_size`.
+        fs_page_size
+            opt in to HDF5's paged-aggregation file-space strategy with this
+            page size in bytes (or a string like ``"1MiB"``) when creating a
+            new file. By default files are created with the standard (FSM)
+            strategy.
         file_kwargs
             Keyword arguments for :class:`h5py.File`
         """
@@ -119,6 +141,18 @@ class LH5Store:
         if mode == "r":
             lh5_file = utils.expand_path(lh5_file, base_path=self.base_path)
             file_kwargs["locking"] = self.locking
+            pb = self.page_buffer if page_buffer is None else page_buffer
+            pb = settings.parse_datasize(pb)
+            if pb > 0:
+                file_kwargs["page_buf_size"] = pb
+        elif page_buffer:
+            msg = (
+                "passing 'page_buffer' for a file opened in a write mode is "
+                "deprecated and sets the file-space *page size*; use "
+                "fs_page_size instead"
+            )
+            warn(msg, DeprecationWarning, stacklevel=2)
+            fs_page_size = fs_page_size or page_buffer
 
         if lh5_file in self.files:
             self.files.move_to_end(lh5_file)
@@ -145,15 +179,28 @@ class LH5Store:
         if mode != "r" and file_exists:
             log.debug(f"opening existing file {full_path} in mode '{mode}'")
 
-        if mode == "w":
+        if mode == "w" and fs_page_size:
             file_kwargs.update(
                 {
                     "fs_strategy": "page",
-                    "fs_page_size": page_buffer,
+                    "fs_page_size": settings.parse_datasize(fs_page_size),
                 }
             )
         try:
-            h5f = h5py.File(full_path, mode, **file_kwargs)
+            try:
+                h5f = h5py.File(full_path, mode, **file_kwargs)
+            except OSError:
+                # page buffering requires the paged file-space strategy;
+                # fall back to a plain open for other files
+                if "page_buf_size" not in file_kwargs:
+                    raise
+                log.debug(
+                    "page-buffered open of %s failed (not a paged file?), "
+                    "retrying without page buffer",
+                    full_path,
+                )
+                file_kwargs.pop("page_buf_size")
+                h5f = h5py.File(full_path, mode, **file_kwargs)
         except (OSError, FileExistsError) as oe:
             raise LH5DecodeError(oe, full_path) from oe
 
@@ -246,6 +293,7 @@ class LH5Store:
         wo_mode: str = None,
         write_start: int = 0,
         page_buffer: int = 0,
+        fs_page_size: int | str = 0,
         **h5py_kwargs,
     ) -> None:
         """Write an LGDO into an LH5 file.
@@ -286,7 +334,11 @@ class LH5Store:
             obj,
             name,
             self.gimme_file(
-                lh5_file, mode=mode, page_buffer=page_buffer, **file_kwargs
+                lh5_file,
+                mode=mode,
+                page_buffer=page_buffer or None,
+                fs_page_size=fs_page_size,
+                **file_kwargs,
             ),
             group=group,
             start_row=start_row,

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import math
 
 import h5py
 import numpy as np
@@ -67,6 +68,18 @@ def _h5_write_array(
         # we'd like to pass a list too in some situations
         if "chunks" in h5py_kwargs and isinstance(h5py_kwargs["chunks"], list):
             h5py_kwargs["chunks"] = tuple(h5py_kwargs["chunks"])
+
+        # translate the "chunk_nbytes" byte target into an explicit chunk
+        # shape unless the user provided one: h5py auto-chunking would
+        # otherwise freeze the chunk shape from this first (possibly tiny)
+        # buffered write for the lifetime of the dataset
+        chunk_nbytes = h5py_kwargs.pop("chunk_nbytes", None)
+        if chunk_nbytes is not None and "chunks" not in h5py_kwargs:
+            row_nbytes = nda.dtype.itemsize * math.prod(nda.shape[1:])
+            h5py_kwargs["chunks"] = (
+                max(1, settings.parse_datasize(chunk_nbytes) // row_nbytes),
+                *nda.shape[1:],
+            )
 
         # create HDF5 dataset
         ds = group.create_dataset(name, data=nda, **h5py_kwargs)

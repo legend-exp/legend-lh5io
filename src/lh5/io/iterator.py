@@ -87,6 +87,7 @@ class LH5Iterator(Iterator):
         friend_suffix: str = "",
         safe_mode: bool = True,
         h5py_open_mode: str = "r",
+        page_buffer: int | str | None = None,
     ) -> None:
         """
         Constructor for LH5Iterator. Must provide a file or collection of
@@ -170,6 +171,12 @@ class LH5Iterator(Iterator):
             file open mode used when acquiring file handles. ``r`` (default)
             opens files read-only while ``a`` allows opening files for
             write-appending as well.
+        page_buffer
+            page-buffer size in bytes (or a string like ``"16MiB"``) used
+            when opening files for reading; effective only for files
+            written with the paged file-space strategy. ``None`` uses
+            :obj:`.settings.DEFAULT_PAGE_BUFFER` (settable via the
+            ``LH5_PAGE_BUFFER`` environment variable).
         """
 
         if h5py_open_mode == "read":
@@ -181,7 +188,10 @@ class LH5Iterator(Iterator):
             raise ValueError(msg)
 
         self.lh5_st = LH5Store(
-            base_path=base_path, keep_open=file_cache, default_mode=h5py_open_mode
+            base_path=base_path,
+            keep_open=file_cache,
+            default_mode=h5py_open_mode,
+            page_buffer=page_buffer,
         )
 
         # convert lh5_files into a nested list
@@ -960,7 +970,9 @@ class LH5Iterator(Iterator):
         for k, v in self.__dict__.items():
             if k == "lh5_st":
                 result.lh5_st = LH5Store(
-                    base_path=self.lh5_st.base_path, keep_open=self.lh5_st.keep_open
+                    base_path=self.lh5_st.base_path,
+                    keep_open=self.lh5_st.keep_open,
+                    page_buffer=self.lh5_st.page_buffer,
                 )
             else:
                 setattr(result, k, deepcopy(v, memo))
@@ -973,6 +985,7 @@ class LH5Iterator(Iterator):
             lh5_st={
                 "base_path": self.lh5_st.base_path,
                 "keep_open": self.lh5_st.keep_open,
+                "page_buffer": self.lh5_st.page_buffer,
             },
             lh5_buffer=None,
         )

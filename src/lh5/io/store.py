@@ -176,7 +176,13 @@ class LH5Store:
         try:
             h5f = h5py.File(full_path, mode, **file_kwargs)
         except (OSError, FileExistsError) as oe:
-            raise LH5DecodeError(oe, full_path) from oe
+            # this error can indicate file corruption and prevent file truncation
+            # so we will manually recreate the file
+            if mode == "w" and "wrong version number in object header" in str(oe):
+                full_path.unlink()
+                h5f = h5py.File(full_path, "w", **file_kwargs)
+            else:
+                raise LH5DecodeError(oe, full_path) from oe
 
         if self.keep_open:
             if self.keep_open is not True and len(self.files) >= self.keep_open:

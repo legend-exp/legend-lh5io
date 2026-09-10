@@ -128,8 +128,10 @@ def _h5_read_lgdo(
                     i_first_valid : i_first_valid + n_rows
                 ]  # works even if n_rows > len(idxa)
         elif idx.ndim == 2 and idx.shape[1] == 2:
-            if not ((idx[:, 0] < idx[:, 1]).all() and (np.diff(idx, axis=0) > 0).all()):
-                msg = "index array must be increasing along each axis"
+            if not (
+                (idx[:, 0] < idx[:, 1]).all() and (idx[:-1, 1] <= idx[1:, 0]).all()
+            ):
+                msg = "index ranges must be increasing and non-overlapping"
                 raise ValueError(msg)
             # chop off indices < start_row
             i_first_valid = bisect.bisect_right(idx[:, 1], start_row)

@@ -10,7 +10,7 @@ from lgdo import types
 
 from ... import datatype
 from ...exceptions import LH5DecodeError
-from . import scalar
+from . import ndarray, scalar
 
 log = logging.getLogger(__name__)
 
@@ -138,6 +138,34 @@ def read_n_rows(h5o, fname, oname):
     type_attr = np.empty((), h5a.dtype)
     h5a.read(type_attr)
     type_attr = type_attr.item().decode()
+
+    # view of entries, get length of entries dataset
+    if type_attr == "view{entries}":
+        h5d_ent = h5py.h5d.open(h5o, b"entries")
+        shape = h5d_ent.get_space().shape
+        h5d_ent.close()
+
+        if len(shape) != 1:
+            msg = "entries must be a 1D array of integers for view{entries}"
+            raise LH5DecodeError(msg, fname, oname)
+        return shape[0]
+
+    # view of slices, read entries and sum over lengths
+    if type_attr == "view{slices}":
+        # Read the entries for the view
+        h5d_ent = h5py.h5d.open(h5o, b"entries")
+        entries, _, _ = ndarray._h5_read_ndarray(
+            h5d_ent,
+            fname,
+            f"{oname}/entries",
+        )
+        h5d_ent.close()
+
+        if len(entries.shape) != 2 or entries.shape[1] != 2:
+            msg = "entries must be a 2D array of shape (n, 2) for view{slices}"
+            raise LH5DecodeError(msg, fname, oname)
+        return np.sum(np.diff(entries, axis=1))
+
     lgdotype = datatype.datatype(type_attr)
 
     # scalars are dim-0 datasets
@@ -199,6 +227,21 @@ def read_size_in_bytes(h5o, fname, oname, field_mask=None):
     type_attr = np.empty((), h5a.dtype)
     h5a.read(type_attr)
     type_attr = type_attr.item().decode()
+
+    if type_attr[:4] == "view":
+        # open the dataset linked by the view
+        try:
+            h5o_data = h5py.h5o.open(h5o, b"data")
+        except KeyError as e:
+            msg = f"view {oname} does not link to data"
+            raise LH5DecodeError(msg, fname, oname) from e
+
+        # scale size of linked dataset by number of entries in view
+        n_entry = read_n_rows(h5o, fname, oname)
+        n_total = read_n_rows(h5o_data, fname, f"{oname}/data")
+        size_total = read_size_in_bytes(h5o_data, fname, f"{oname}/data", field_mask)
+        return int(np.round(n_entry / n_total * size_total))
+
     lgdotype = datatype.datatype(type_attr)
     field_mask = build_field_mask(field_mask)
 

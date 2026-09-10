@@ -13,7 +13,7 @@ from __future__ import annotations
 import hdf5plugin  # noqa: F401
 
 from . import concat, truncate
-from .core import read, read_as, write
+from .core import read, read_as, write, write_view
 from .iterator import LH5Iterator, MapProgress
 from .settings import default_hdf5_settings
 from .store import LH5Store
@@ -33,4 +33,5 @@ __all__ = [
     "show",
     "truncate",
     "write",
+    "write_view",
 ]

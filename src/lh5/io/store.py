@@ -12,7 +12,7 @@ from collections import OrderedDict
 from collections.abc import Mapping, Sequence
 from inspect import signature
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import h5py
 from lgdo import types
@@ -308,6 +308,68 @@ class LH5Store:
             self.gimme_file(
                 lh5_file, mode=mode, page_buffer=page_buffer, **file_kwargs
             ),
+            group=group,
+            start_row=start_row,
+            n_rows=n_rows,
+            wo_mode=wo_mode,
+            write_start=write_start,
+            **h5py_kwargs,
+        )
+
+    def write_view(
+        self,
+        target: str | h5py.Group | h5py.Dataset,
+        entries: ArrayLike,
+        name: str,
+        lh5_file: str | Path | h5py.File,
+        link_type: Literal[None, "hard", "soft", "external"] = None,
+        external_file: str | Path | None = None,
+        group: str | h5py.Group = "/",
+        start_row: int = 0,
+        n_rows: int | None = None,
+        wo_mode: str | None = None,
+        write_start: int = 0,
+        page_buffer: int = 0,
+        **h5py_kwargs,
+    ) -> None:
+        """Write an LGDO into an LH5 file.
+
+        See Also
+        --------
+        .core.write
+        """
+        wo_mode = utils.normalize_womode(wo_mode)
+        if wo_mode is None:
+            wo_mode = self.default_mode
+            if wo_mode == "r" or (
+                wo_mode == "of" and self.base_path.joinpath(lh5_file) in self.files
+            ):
+                wo_mode = "a"
+        if wo_mode == "of":
+            write_start = 0
+
+        # "mode" is for the h5df.File and wo_mode is for this function
+        # In hdf5, 'a' is really "modify" -- in addition to appending, you can
+        # change any object in the file. So we use file:append for
+        # write_object:overwrite.
+        mode = "w" if wo_mode == "of" else "a"
+
+        file_kwargs = {
+            k: h5py_kwargs[k]
+            for k in h5py_kwargs & signature(h5py.File).parameters.keys()
+        }
+
+        lh5_file = self.gimme_file(
+            lh5_file, mode=mode, page_buffer=page_buffer, **file_kwargs
+        )
+
+        return _serializers._h5_write_view(
+            target,
+            entries,
+            name,
+            lh5_file,
+            link_type=link_type,
+            external_file=external_file,
             group=group,
             start_row=start_row,
             n_rows=n_rows,

@@ -5,7 +5,8 @@ import inspect
 import logging
 import sys
 from collections.abc import Mapping, Sequence
-from contextlib import suppress
+from contextlib import nullcontext, suppress
+from inspect import signature
 from pathlib import Path
 from typing import Any
 
@@ -405,3 +406,128 @@ def read_as(
 
     # and finally return a view
     return obj.view_as(library, **kwargs2)
+
+
+def write_view(
+    target: str | h5py.Group | h5py.Dataset,
+    entries: np.ndarray,
+    name: str,
+    lh5_file: str | Path | h5py.File,
+    link_type: str = None,
+    external_file: str | Path | None = None,
+    group: str | h5py.Group = "/",
+    start_row: int = 0,
+    n_rows: int | None = None,
+    wo_mode: str = "append",
+    write_start: int = 0,
+    page_buffer: int = 0,
+    **h5py_kwargs,
+):
+    """Create a view of an array or table in an LH5 file.
+    A LH5 view is a reference to an existing array or table in the
+    same or another LH5 file, along with an entry list specifying the
+    rows to read out. The entry list can be stored as a 1D array of
+    row indices or a 2D array of row ranges (start, end); the entries
+    correspond to the outer-most dimension of the target array or table only.
+
+    Parameters
+    ----------
+    target
+        The target array or table to be referenced. Can be a string
+        corresponding to the path of the target in the file, or an
+        :class:`h5py.Group` or :class:`h5py.Dataset` object. A string
+        must be provided if the view is a SoftLink or ExternalLink.
+    entries
+        A 1D array of row indices or a (n,2) shape array of row ranges (start, end).
+        Indices must be in ascending order.
+    name
+        Name of the view in the output LH5 file.
+    lh5_file
+        HDF5 file name or :class:`h5py.File` object.
+    link_type
+        Type of link used to reference the target. Can be ``hard`` (default),
+        ``soft`` or ``external``. If ``external``, the `external_file` arg
+        is required.
+    external_file
+        External HDF5 file containing target referenced by view. Only used
+        if `link_type` is ``external``.
+    group
+        HDF5 group name or :class:`h5py.Group` object in which `obj` should
+        be written.
+    start_row
+        first row in `obj` to be written.
+    n_rows
+        number of rows in `obj` to be written.
+    wo_mode
+        - ``write_safe`` or ``w``: only proceed with writing if the
+          object does not already exist in the file.
+        - ``append`` or ``a``: append along axis 0 (the first dimension)
+          of array-like objects and array-like subfields of structs.
+          :class:`~.lgdo.scalar.Scalar` objects get overwritten.
+        - ``overwrite`` or ``o``: replace data in the file if present,
+          starting from `write_start`. Note: overwriting with `write_start` =
+          end of array is the same as ``append``.
+        - ``overwrite_file`` or ``of``: delete file if present prior to
+          writing to it. `write_start` should be 0 (it's ignored).
+        - ``append_column`` or ``ac``: append fields/columns from an
+          :class:`~.lgdo.struct.Struct` `obj` (and derived types such as
+          :class:`~.lgdo.table.Table`) only if there is an existing
+          :class:`~.lgdo.struct.Struct` in the `lh5_file` with the same `name`.
+          If there are matching fields, it errors out. If appending to a
+          ``Table`` and the size of the new column is different from the size
+          of the existing table, it errors out.
+    write_start
+        row in the output file (if already existing) to start overwriting
+        from.
+    page_buffer
+        enable paged aggregation with a buffer of this size in bytes.
+        Only used when creating a new file. Useful when writing a file
+        with a large number of small datasets. This is a short-hand for
+        ``(fs_strategy="page", fs_page_size=page_buffer)``
+    **h5py_kwargs
+        additional keyword arguments forwarded to
+        :meth:`h5py.Group.create_dataset` to specify, for example, an HDF5
+        compression filter to be applied before writing non-scalar
+        datasets. **Note: `compression` ignored if compression is specified
+        as an `obj` attribute.**
+    """
+    wo_mode = normalize_womode(wo_mode)
+    if page_buffer > 0 and (
+        (isinstance(lh5_file, (str, Path)) and not Path(lh5_file).is_file())
+        or wo_mode in ("w", "of")
+    ):
+        h5py_kwargs.update(
+            {
+                "fs_strategy": "page",
+                "fs_page_size": page_buffer,
+            }
+        )
+
+    file_kwargs = {
+        k: h5py_kwargs[k] for k in h5py_kwargs & signature(h5py.File).parameters.keys()
+    }
+    h5py_kwargs = {k: h5py_kwargs[k] for k in h5py_kwargs - file_kwargs.keys()}
+
+    with (
+        h5py.File(
+            lh5_file,
+            mode="w" if wo_mode == "of" or not Path(lh5_file).exists() else "a",
+            **file_kwargs,
+        )
+        if not isinstance(lh5_file, h5py.File)
+        else nullcontext(lh5_file) as fh
+    ):
+        return _serializers._h5_write_view(
+            target,
+            entries,
+            name,
+            fh,
+            link_type=link_type,
+            external_file=external_file,
+            group=group,
+            start_row=start_row,
+            n_rows=n_rows,
+            wo_mode=wo_mode,
+            write_start=write_start,
+            **h5py_kwargs,
+        )

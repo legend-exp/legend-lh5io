@@ -36,6 +36,7 @@ from .encoded import (
 )
 from .scalar import _h5_read_scalar
 from .vector_of_vectors import _h5_read_vector_of_vectors
+from .view import _h5_read_view
 
 log = logging.getLogger(__name__)
 
@@ -59,7 +60,22 @@ def _h5_read_lgdo(
 
     attrs = utils.read_attrs(h5o, fname, oname)
     try:
-        lgdotype = dtypeutils.datatype(attrs["datatype"])
+        dtype_attr = attrs["datatype"]
+        if dtype_attr[:4] == "view":
+            return _h5_read_view(
+                h5o,
+                fname,
+                oname,
+                view_type=dtype_attr,
+                start_row=start_row,
+                n_rows=n_rows,
+                idx=idx,
+                field_mask=field_mask,
+                obj_buf=obj_buf,
+                obj_buf_start=obj_buf_start,
+                decompress=decompress,
+            )
+        lgdotype = dtypeutils.datatype(dtype_attr)
     except KeyError as e:
         msg = "dataset not in file or missing 'datatype' attribute"
         raise LH5DecodeError(msg, fname, oname) from e

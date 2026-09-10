@@ -35,14 +35,12 @@ def _h5_write_vector_of_vectors(
     # cumulative lengths as appropriate for the in-file object
     # declare here because we have to subtract it off at the end
     offset = np.int64(0)
-    if (wo_mode in ("a", "o")) and "cumulative_length" in group:
-        len_cl = len(group["cumulative_length"])
-        # if append, ignore write_start and set it to total number of vectors
-        if wo_mode == "a":
-            write_start = len_cl
-        if len_cl > 0:
-            # set offset to correct number of elements in flattened_data until write_start
-            offset = group["cumulative_length"][write_start - 1]
+    len_cl = len(group["cumulative_length"]) if "cumulative_length" in group else 0
+    if wo_mode == "a" and len_cl > 0:
+        write_start = len_cl
+        offset = group["cumulative_length"][len_cl - 1]
+    elif wo_mode == "o" and len_cl > 0 and write_start > 0:
+        offset = group["cumulative_length"][min(len_cl, write_start) - 1]
 
     # First write flattened_data array. Only write rows with data.
     fd_start = 0 if start_row == 0 else obj.cumulative_length.nda[start_row - 1]
@@ -58,8 +56,8 @@ def _h5_write_vector_of_vectors(
         _func = _h5_write_vector_of_vectors
     else:
         msg = (
-            "don't know how to serialize to disk flattened_data "
-            "of {type(obj.flattened_data).__name__} type"
+            f"don't know how to serialize to disk flattened_data "
+            f"of {type(obj.flattened_data).__name__} type"
         )
         raise LH5EncodeError(msg, lh5_file, group, f"{name}.flattened_data")
 
@@ -105,6 +103,12 @@ def _h5_write_vector_of_vectors(
         write_start=write_start,
         **h5py_kwargs,
     )
+    # NOTE: this will fill in missing elements with 0 length arrays; it's
+    # actually safer than when Array does it! But, do we really want to allow
+    # writing with a write_start past the end of the array?
+    if write_start > len_cl:
+        fill_in = group["cumulative_length"][len_cl - 1] if len_cl > 0 else 0
+        group["cumulative_length"][len_cl:write_start] = fill_in
 
     np.subtract(
         obj.cumulative_length.nda,

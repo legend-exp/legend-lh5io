@@ -8,10 +8,9 @@ from copy import deepcopy
 from dataclasses import dataclass
 from functools import partial
 from itertools import chain
-from multiprocessing import Manager, Queue
-from queue import Empty
+from queue import Empty, Queue
 from threading import Event, Thread
-from typing import Any
+from typing import Any, Literal
 
 import awkward as ak
 import numpy as np
@@ -330,13 +329,15 @@ class LH5Iterator(Iterator):
         self.n_entries = n_entries
         self.current_i_entry = 0
         self.next_i_entry = 0
+        self.current_local_entries = np.empty(0, "q")
+        self.current_global_entries = np.empty(0, "q")
 
         # List of entry indices from each file
         self.local_entry_list = None
         self.global_entry_list = None
         if entry_list is not None:
             entry_list = list(entry_list)
-            if isinstance(entry_list[0], int):
+            if len(entry_list) > 0 and isinstance(entry_list[0], (int, np.integer)):
                 self.local_entry_list = [None] * self.n_datasets
                 self.global_entry_list = np.array(entry_list, "q")
                 self.global_entry_list.sort()
@@ -358,6 +359,10 @@ class LH5Iterator(Iterator):
                 self.local_entry_list = [[]] * self.n_datasets
                 for i_ds, local_mask in enumerate(entry_mask):
                     self.local_entry_list[i_ds] = np.nonzero(local_mask)[0]
+
+    def __del__(self):
+        if hasattr(self, "lh5_st") and self.lh5_st is not None:
+            self.lh5_st.close()
 
     def get_file(self, i_ds: int) -> str:
         """Get file name for dataset i_ds"""
@@ -420,7 +425,7 @@ class LH5Iterator(Iterator):
                     val = np.iinfo(dtype).max
                 elif dtype.kind == "i":
                     val = np.iinfo(dtype).min
-                elif dtype.kind in ("f", "S"):
+                elif dtype.kind in ("f", "c"):
                     val = np.nan
                 elif dtype.kind in ("S", "T", "U"):
                     val = ""
@@ -445,6 +450,8 @@ class LH5Iterator(Iterator):
             fcl = self.ds_map[i_start - 1] if i_start > 0 else 0
 
             for i in range(i_start, i_ds + 1):
+                if i >= self.n_datasets:
+                    break
                 fcl += self.lh5_st.read_n_rows(self.get_group(i), self.get_file(i))
                 self.ds_map[i] = fcl
         return fcl
@@ -479,7 +486,7 @@ class LH5Iterator(Iterator):
 
     def get_ds_entrylist(self, i_ds: int) -> np.ndarray:
         """Helper to get entry list for dataset"""
-        if i_ds < 0 or i_ds > self.n_datasets:
+        if i_ds < 0 or i_ds >= self.n_datasets:
             msg = f"dataset index {i_ds} out of range"
             raise IndexError(msg)
 
@@ -523,6 +530,10 @@ class LH5Iterator(Iterator):
             msg = "n_entries cannot be larger than buffer_len"
             raise ValueError(msg)
 
+        if len(self.current_local_entries) < n_entries:
+            self.current_local_entries = np.empty(n_entries, "q")
+            self.current_global_entries = np.empty(n_entries, "q")
+
         # if dataset hasn't been opened yet, search through datasets
         # sequentially until we find the right one
         i_ds = np.searchsorted(self.entry_map, i_entry, "right")
@@ -562,6 +573,23 @@ class LH5Iterator(Iterator):
                     min(n_entries, self._get_ds_cumentries(i_ds) - i_entry)
                 )
 
+            if local_idx is None:
+                self.current_local_entries[buf_start : len(self.lh5_buffer)] = (
+                    np.arange(
+                        local_i_entry, local_i_entry + len(self.lh5_buffer) - buf_start
+                    )
+                )
+            else:
+                self.current_local_entries[buf_start : len(self.lh5_buffer)] = (
+                    local_idx[
+                        local_i_entry : local_i_entry + len(self.lh5_buffer) - buf_start
+                    ]
+                )
+            self.current_global_entries[buf_start : len(self.lh5_buffer)] = (
+                self.current_local_entries[buf_start : len(self.lh5_buffer)]
+                + self._get_ds_cumlen(i_ds - 1)
+            )
+
             if self.group_data is not None:
                 data = self.get_group_data(i_ds)
                 for f in data.fields:
@@ -571,10 +599,18 @@ class LH5Iterator(Iterator):
             local_i_entry = 0
 
         self.current_i_entry = i_entry
+        if len(self.current_local_entries) > len(self.lh5_buffer):
+            self.current_local_entries = np.resize(
+                self.current_local_entries, len(self.lh5_buffer)
+            )
+            self.current_global_entries = np.resize(
+                self.current_global_entries, len(self.lh5_buffer)
+            )
 
         for friend in self.friend:
-            friend.read(i_entry)
+            friend.read(i_entry, n_entries)
 
+            # check if entries in all datasets to current are all equal
             if (
                 self.safe_mode
                 and self._get_ds_cumentries(i_ds) != friend._get_ds_cumentries(i_ds)
@@ -607,6 +643,8 @@ class LH5Iterator(Iterator):
                 if size_in_bytes > 0:
                     buffer_len = int(buffer_len / (size_in_bytes * ureg.B))
                     break
+            if isinstance(buffer_len, ureg.Quantity):
+                buffer_len = int(buffer_len / ureg.B)
 
         self._buffer_len = buffer_len
         for fr in self.friend:
@@ -723,11 +761,7 @@ class LH5Iterator(Iterator):
             remaining_fields = set()
 
         elif isinstance(mask, Mapping):
-            for k, v in mask.items():
-                new_k = k.replace(".", "/")
-                if new_k != k:
-                    mask[new_k] = v
-                    del mask[k]
+            mask = {k.replace(".", "/"): v for k, v in mask.items()}
 
             self.field_mask = {
                 field: mask[field] for field in self.available_fields if field in mask
@@ -820,64 +854,6 @@ class LH5Iterator(Iterator):
             log.warning(f"Fields {remaining_fields} in field mask were not found")
 
     @property
-    def current_local_entries(self) -> NDArray[int]:
-        """Return list of local dataset entries in buffer"""
-        cur_entries = np.zeros(len(self.lh5_buffer), dtype="int32")
-        i_ds = np.searchsorted(self.entry_map, self.current_i_entry, "right")
-        ds_start = self._get_ds_cumentries(i_ds - 1)
-        i_local = self.current_i_entry - ds_start
-        i = 0
-
-        while i < len(cur_entries):
-            # number of entries to read from this file
-            ds_end = self._get_ds_cumentries(i_ds)
-            n = min(ds_end - ds_start - i_local, len(cur_entries) - i)
-            entries = self.get_ds_entrylist(i_ds)
-
-            if entries is None:
-                cur_entries[i : i + n] = np.arange(i_local, i_local + n)
-            else:
-                cur_entries[i : i + n] = entries[i_local : i_local + n]
-
-            i_ds += 1
-            ds_start = ds_end
-            i_local = 0
-            i += n
-
-        return cur_entries
-
-    @property
-    def current_global_entries(self) -> NDArray[int]:
-        """Return list of global file entries in buffer"""
-        cur_entries = np.zeros(len(self.lh5_buffer), dtype="int32")
-        i_ds = np.searchsorted(self.entry_map, self.current_i_entry, "right")
-        ds_start = self._get_ds_cumentries(i_ds - 1)
-        i_local = self.current_i_entry - ds_start
-        i = 0
-
-        while i < len(cur_entries):
-            # number of entries to read from this file
-            ds_end = self._get_ds_cumentries(i_ds)
-            n = min(ds_end - ds_start - i_local, len(cur_entries) - i)
-            entries = self.get_ds_entrylist(i_ds)
-
-            if entries is None:
-                cur_entries[i : i + n] = self._get_ds_cumlen(i_ds - 1) + np.arange(
-                    i_local, i_local + n
-                )
-            else:
-                cur_entries[i : i + n] = (
-                    self._get_ds_cumlen(i_ds - 1) + entries[i_local : i_local + n]
-                )
-
-            i_ds += 1
-            ds_start = ds_end
-            i_local = 0
-            i += n
-
-        return cur_entries
-
-    @property
     def current_files(self) -> NDArray[str]:
         """Return list of file names for entries in buffer"""
         cur_files = np.zeros(len(self.lh5_buffer), dtype=np.dtypes.StringDType)
@@ -949,6 +925,7 @@ class LH5Iterator(Iterator):
 
         buf = self.read(self.next_i_entry, n_entries)
         if len(buf) == 0:
+            self.lh5_st.close()
             raise StopIteration
         self.next_i_entry = self.current_i_entry + len(buf)
         return buf
@@ -1044,13 +1021,14 @@ class LH5Iterator(Iterator):
 
     def map(
         self,
-        fun: Callable[Table, LH5Iterator, Any],
+        fun: Callable[[Table, LH5Iterator], Any],
         aggregate: Callable = None,
         init: Any = None,
-        begin: Callable[LH5Iterator] = None,
-        terminate: Callable[LH5Iterator] = None,
+        begin: Callable[[LH5Iterator], None] = None,
+        terminate: Callable[[LH5Iterator], None] = None,
         processes: int = None,
         executor: Executor = None,
+        executor_mode: Literal["process", "thread", None] = None,
         progress_queue: Queue = None,
         job_id: int | Collection[int] = 0,
     ) -> Iterator[Any]:
@@ -1133,6 +1111,17 @@ class LH5Iterator(Iterator):
             all available processes/threads.
         executor:
             :class:`concurrent.futures.Executor` object for managing parallelism.
+        executor_mode:
+            mode for transferring data between threads/processes, based on executor. This
+            affects how aggregators, and internal states if objects are passed. Options:
+
+            - process: multiprocessing-like; the executor is assumed to handle inter-process
+              communication (likely through pickling), and objects are assumed to be isolated
+            - thread: threading-like; memory is shared between threads, so we explicitly
+              copy data before sending to threads to ensure isolation
+            - ``None``: default; use process for ProcessPoolExecutor and InterpreterPoolExecutor,
+              and thread for ThreadPoolExecutor; must be explicit for others!
+
         progress_queue:
             :class:`multiprocessing.Queue` object to which progress information will be
             communicated back to main process. Returns a mapping with keys:
@@ -1164,25 +1153,57 @@ class LH5Iterator(Iterator):
             )
 
         if processes is None:
-            processes = executor._max_workers
+            if hasattr(executor, "_max_workers"):
+                processes = executor._max_workers
+            elif hasattr(executor, "_threads"):
+                processes = len(executor._threads)
+            else:
+                msg = f"Must explicitly provide number of processes for {type(executor).__name__}"
+                raise ValueError(msg)
 
         it_pool = self._generate_workers(processes)
 
-        result = executor.map(
-            partial(
+        if executor_mode is None:
+            if type(executor).__name__ in (
+                "ProcessPoolExecutor",
+                "InterpreterPoolExecutor",
+            ):
+                executor_mode = "process"
+            elif type(executor).__name__ == "ThreadPoolExecutor":
+                executor_mode = "thread"
+            else:
+                msg = f"Could not deduce executor_mode for {type(executor).__name__}. Please specify"
+                raise ValueError(msg)
+
+        if executor_mode == "process":
+            result = executor.map(
+                partial(
+                    _map_helper,
+                    fun,
+                    aggregate,
+                    init,
+                    begin,
+                    terminate,
+                    progress_queue=progress_queue,
+                ),
+                it_pool,
+                job_id
+                if isinstance(job_id, Collection)
+                else range(job_id, job_id + processes),
+            )
+        elif executor_mode == "thread":
+            result = executor.map(
                 _map_helper,
-                fun,
-                aggregate,
-                init,
-                begin,
-                terminate,
-                progress_queue=progress_queue,
-            ),
-            it_pool,
-            job_id
-            if isinstance(job_id, Collection)
-            else range(job_id, job_id + processes),
-        )
+                [deepcopy(fun) for _ in range(processes)],
+                [deepcopy(aggregate) for _ in range(processes)],
+                [deepcopy(init) for _ in range(processes)],
+                [deepcopy(begin) for _ in range(processes)],
+                [deepcopy(terminate) for _ in range(processes)],
+                it_pool,
+                job_id
+                if isinstance(job_id, Collection)
+                else range(job_id, job_id + processes),
+            )
 
         # If no aggregator was given, chain iterators
         if aggregate is _append_copy:
@@ -1196,6 +1217,7 @@ class LH5Iterator(Iterator):
         fields: Collection[str] | Mapping[str, str | None] = None,
         processes: Executor | int = None,
         executor: Executor = None,
+        executor_mode: Literal["process", "thread", None] = None,
         library: str = None,
         progress: progress.Progress | console.Console | bool = True,
     ):
@@ -1203,6 +1225,11 @@ class LH5Iterator(Iterator):
         Query the data files in the iterator
 
         Returns the selected data as a single table in one of several formats.
+
+        .. danger::
+
+            This function uses :func:`eval` to evaluate string expressions. Do not
+            use with untrusted input, as this can lead to arbitrary code execution.
 
         Examples
         --------
@@ -1251,6 +1278,17 @@ class LH5Iterator(Iterator):
             :class:`concurrent.futures.Executor` object for managing parallelism.
             If ``None``, create a :class:`concurrent.futures.ProcessPoolExecutor`
             with number of processes equal to ``processes``.
+        executor_mode:
+            mode for transferring data between threads/processes, based on executor. This
+            affects how aggregators, and internal states if objects are passed. Options:
+
+            - process: multiprocessing-like; the executor is assumed to handle inter-process
+              communication (likely through pickling), and objects are assumed to be isolated
+            - thread: threading-like; memory is shared between threads, so we explicitly
+              copy data before sending to threads to ensure isolation
+            - ``None``: default; use process for ProcessPoolExecutor and InterpreterPoolExecutor,
+              and thread for ThreadPoolExecutor; must be explicit for others!
+
         library:
             library to convert the columns to when using a string expression for ``where``.
             See :meth:`Table.eval`.
@@ -1267,17 +1305,17 @@ class LH5Iterator(Iterator):
         test = where(self.lh5_buffer, self)
 
         with ExitStack() as stack:
-            prog = (
-                stack.enter_context(MapProgress(processes, progress))
-                if progress
-                else None
-            )
-
             if processes is None and isinstance(executor, Executor):
                 processes = executor._max_workers
 
             if executor is None and isinstance(processes, int):
                 executor = stack.enter_context(ProcessPoolExecutor(processes))
+
+            prog = (
+                stack.enter_context(MapProgress(processes, executor, progress))
+                if progress
+                else None
+            )
 
             pq = prog.queue if prog else None
             if isinstance(test, LGDOCollection):
@@ -1285,6 +1323,7 @@ class LH5Iterator(Iterator):
                     where,
                     processes=processes,
                     executor=executor,
+                    executor_mode=executor_mode,
                     aggregate=Table.append,
                     progress_queue=pq,
                 )
@@ -1340,12 +1379,18 @@ class LH5Iterator(Iterator):
         keys: Collection[str] | str = None,
         processes: Executor | int = None,
         executor: Executor = None,
+        executor_mode: Literal["process", "thread", None] = None,
         progress: progress.Progress | console.Console | bool = True,
         **hist_kwargs,
     ) -> Hist:
         """
         Fill a histogram from data produced by a query selecting on ``where``. If
         ``where`` is ``None``, fill with all data fetched by iterator.
+
+        .. danger::
+
+            This function uses :func:`eval` to evaluate string expressions. Do not
+            use with untrusted input, as this can lead to arbitrary code execution.
 
         Examples
         --------
@@ -1401,6 +1446,17 @@ class LH5Iterator(Iterator):
             :class:`concurrent.futures.Executor` object for managing parallelism.
             If ``None``, create a :class:`concurrent.futures.ProcessPoolExecutor`
             with number of processes equal to ``processes``.
+        executor_mode:
+            mode for transferring data between threads/processes, based on executor. This
+            affects how aggregators, and internal states if objects are passed. Options:
+
+            - process: multiprocessing-like; the executor is assumed to handle inter-process
+              communication (likely through pickling), and objects are assumed to be isolated
+            - thread: threading-like; memory is shared between threads, so we explicitly
+              copy data before sending to threads to ensure isolation
+            - ``None``: default; use process for ProcessPoolExecutor and InterpreterPoolExecutor,
+              and thread for ThreadPoolExecutor; must be explicit for others!
+
         progress:
             if ``True`` draw progress bar; can also provide an existing rich ``Progress``
             or ``Console`` object
@@ -1423,8 +1479,11 @@ class LH5Iterator(Iterator):
             where = _table_query(where, "ak", None)
 
         with ExitStack() as stack:
+            if executor is None and isinstance(processes, int):
+                executor = stack.enter_context(ProcessPoolExecutor(processes))
+
             prog = (
-                stack.enter_context(MapProgress(processes, progress))
+                stack.enter_context(MapProgress(processes, executor, progress))
                 if progress
                 else None
             )
@@ -1432,13 +1491,11 @@ class LH5Iterator(Iterator):
             if processes is None and isinstance(executor, Executor):
                 processes = executor._max_workers
 
-            if executor is None and isinstance(processes, int):
-                executor = stack.enter_context(ProcessPoolExecutor(processes))
-
             h = self.map(
                 where,
                 processes=processes,
                 executor=executor,
+                executor_mode=executor_mode,
                 aggregate=_hist_filler(keys),
                 init=h,
                 progress_queue=prog.queue if prog else None,
@@ -1664,6 +1721,7 @@ class MapProgress(Thread):
     def __init__(
         self,
         tasks: list | int,
+        executor: Executor,
         prog: progress.Progress | console.Console = None,
         update_period: float = 0.1,
     ):
@@ -1682,7 +1740,7 @@ class MapProgress(Thread):
             self.progress = prog
         else:
             self.progress = progress.Progress(
-                progress.TextColumn("{task.description}: {task.fields[status]}"),
+                progress.TextColumn("{task.description:>5}: {task.fields[status]:<12}"),
                 progress.BarColumn(),
                 progress.TaskProgressColumn(),
                 progress.TextColumn(
@@ -1706,8 +1764,26 @@ class MapProgress(Thread):
             )
         self.update_period = update_period
 
-        self.manager = Manager()
-        self.queue = self.manager.Queue()
+        self.manager = None
+        self.queue = None
+        if executor is None:
+            self.queue = Queue()
+        elif type(executor).__name__ == "ProcessPoolExecutor":
+            import multiprocessing  # noqa: PLC0415
+
+            self.manager = multiprocessing.Manager()
+            self.queue = self.manager.Queue()
+        elif type(executor).__name__ == "InterpreterPoolExecutor":
+            self.manager = None
+            from concurrent import interpreters  # noqa: PLC0415
+
+            self.queue = interpreters.create_queue()
+        elif type(executor).__name__ == "ThreadPoolExecutor":
+            self.queue = Queue()
+        else:
+            log.warning(
+                f"Cannot pass messages from {type(executor).__name__} to progress bar. Progress will not be shown."
+            )
         self.done = Event()
         super().__init__(daemon=True)
 
@@ -1719,7 +1795,7 @@ class MapProgress(Thread):
             while True:
                 try:
                     progress_info = self.queue.get(block=False)
-                except Empty:
+                except (AttributeError, Empty):
                     break
                 self.progress.update(**progress_info)
             self.progress.refresh()
@@ -1728,7 +1804,7 @@ class MapProgress(Thread):
         while True:
             try:
                 progress_info = self.queue.get(block=False)
-            except Empty:
+            except (AttributeError, Empty):
                 break
             self.progress.update(**progress_info)
         self.progress.refresh()

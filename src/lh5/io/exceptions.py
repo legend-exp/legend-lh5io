@@ -36,7 +36,7 @@ class LH5EncodeError(Exception):
 
         self.file = file.filename if isinstance(file, h5py.File) else file
         self.group = (
-            (group.name if isinstance(file, h5py.File) else group).rstrip("/")
+            (group.name if isinstance(group, h5py.Group) else group).rstrip("/")
             if group is not None
             else None
         )

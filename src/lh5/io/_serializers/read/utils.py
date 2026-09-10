@@ -156,7 +156,7 @@ def read_n_rows(h5o, fname, oname):
             obj = h5py.h5o.open(h5o, field.encode())
             n_rows_read = read_n_rows(obj, fname, field)
             obj.close()
-            if not rows_read:
+            if rows_read is None:
                 rows_read = n_rows_read
             elif rows_read != n_rows_read:
                 log.warning(
@@ -250,6 +250,7 @@ def read_size_in_bytes(h5o, fname, oname, field_mask=None):
         obj = h5py.h5o.open(h5o, b"encoded_data")
         cl = h5py.h5o.open(obj, b"cumulative_length")
         size *= cl.shape[0]
+        cl.close()
         size *= 4  # TODO: UPDATE WHEN CODECS SUPPORT MORE DTYPES
         obj.close()
 

@@ -21,7 +21,7 @@ def default_hdf5_settings() -> dict[str, Any]:
     }
 
 
-DEFAULT_HDF5_SETTINGS: dict[str, ...] = default_hdf5_settings()
+DEFAULT_HDF5_SETTINGS: dict[str, Any] = default_hdf5_settings()
 """Global dictionary storing the default HDF5 settings for writing data to disk.
 
 Modify this global variable before writing data to disk with this package.

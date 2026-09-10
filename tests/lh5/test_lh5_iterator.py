@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pickle
 import shutil
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from copy import deepcopy
 
 import awkward as ak
@@ -819,11 +820,27 @@ def test_map(more_lgnd_files):
     sum_map = lh5_it.map(sumE, aggregate=np.add, init=-10.0)
     assert sum_exp - 10.0 == sum_map
 
-    # test multiprocessing; note this only works as done here if
+    # test default multi-processing; note this only works as done here if
     # buffer_len evenly divides iterator length for each file!
     map_mp = lh5_it.map(return_tb, processes=2)
 
-    assert all(tb == tb_mp for tb, tb_mp in zip(lh5_it, map_mp, strict=False))
+    assert all(tb == tb_mp for tb, tb_mp in zip(lh5_it, map_mp, strict=True))
+
+    # test multithreading
+    with ThreadPoolExecutor(2) as thread_pool, MapProgress(2, thread_pool) as prog:
+        map_mt = lh5_it.map(
+            return_tb, processes=2, executor=thread_pool, progress_queue=prog.queue
+        )
+        assert all(tb == tb_mt for tb, tb_mt in zip(lh5_it, map_mt, strict=True))
+
+    # test multiprocessing
+    with ProcessPoolExecutor(2) as process_pool, MapProgress(2, process_pool) as prog:
+        map_mp = lh5_it.map(
+            return_tb, processes=2, executor=process_pool, progress_queue=prog.queue
+        )
+        assert all(tb == tb_mp for tb, tb_mp in zip(lh5_it, map_mp, strict=True))
+
+    # TODO: once numpy figures out InterpreterPoolProcessor, add a test for interpreter pool
 
 
 def query_lgdo(tb, _):

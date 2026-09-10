@@ -6,6 +6,7 @@ HDF5 files.
 from __future__ import annotations
 
 import logging
+import os
 import sys
 from collections import OrderedDict
 from collections.abc import Mapping, Sequence
@@ -29,12 +30,17 @@ class LH5Store:
     Class to represent a store of LEGEND HDF5 files. The two main methods
     implemented by the class are :meth:`read` and :meth:`write`.
 
+    ..important::
+        ``h5py`` file objects are not closed until all references are deleted.
+        It is strongly recommended to use the ``LH5Store`` as a context manager
+        to ensure that files are closed, and to not directly access ``h5py`` objects!
+
     Examples
     --------
     >>> from lh5 import LH5Store
-    >>> store = LH5Store()
-    >>> obj = store.read("/geds/waveform", "file.lh5")
-    >>> type(obj)
+    >>> with LH5Store() as store:
+    >>>     obj = store.read("/geds/waveform", "file.lh5")
+    >>>     type(obj)
     lgdo.waveformtable.WaveformTable
     """
 
@@ -57,37 +63,51 @@ class LH5Store:
         locking
             whether to lock files when reading
         default_mode
-            default mode in which to open files with this ``LH5Store``. See
-            :class:`h5py.File` documentation. If default_mode is ``"r"``, use
-            ``"a"`` when calling `LH5Store.write`.
+            default mode in which to open files with this ``LH5Store``. This can
+            be overridden by the `mode` argument in :meth:`read` and :meth:`write`
+
+            - ``write_safe`` or ``w``: only proceed with writing if the
+              object does not already exist in the file.
+            - ``append`` or ``a``: append along axis 0 (the first dimension)
+              of array-like objects and array-like subfields of structs.
+              :class:`~.lgdo.scalar.Scalar` objects get overwritten.
+            - ``overwrite`` or ``o``: replace data in the file if present,
+              starting from `write_start`. Note: overwriting with `write_start` =
+              end of array is the same as ``append``.
+            - ``overwrite_file`` or ``of``: delete file if present prior to
+              writing to it if the file is not already open. `write_start` should
+              be 0 (it's ignored). Writes to an already-opened file will use ``append``.
+
+            .. attention::
+                ``overwrite_file``'s behavior depends on the ``keep_open`` argument.
+                If ``keep_open=False``, the file will be overwritten every time it
+                is accessed (even for reading!); if ``keep_open=True``, it will be
+                overwritten once. If ``keep_open`` defines a finite cache, if the file
+                is removed from the cache and re-opened, it will be overwritten again!
+
+            - ``append_column`` or ``ac``: append fields/columns from an
+              :class:`~.lgdo.struct.Struct` `obj` (and derived types such as
+              :class:`~.lgdo.table.Table`) only if there is an existing
+              :class:`~.lgdo.struct.Struct` in the `lh5_file` with the same `name`.
+              If there are matching fields, it errors out. If appending to a
+              ``Table`` and the size of the new column is different from the size
+              of the existing table, it errors out.
+
         """
-        base_path = str(Path(base_path)) if base_path != "" else ""
-        self.base_path = "" if base_path == "" else utils.expand_path(base_path)
+        self.base_path = Path(os.path.expandvars(base_path)).resolve()
+        if not self.base_path.exists():
+            msg = f"base path {self.base_path} does not exist"
+            raise FileNotFoundError(msg)
+
         self.keep_open = keep_open
         self.locking = locking
         self.files = OrderedDict()
-
-        if default_mode == "read":
-            default_mode = "r"
-        if default_mode == "write_safe":
-            default_mode = "w"
-        if default_mode == "append":
-            default_mode = "a"
-        if default_mode == "overwrite":
-            default_mode = "o"
-        if default_mode == "overwrite_file":
-            default_mode = "of"
-        if default_mode == "append_column":
-            default_mode = "ac"
-        if default_mode not in ["r", "w", "a", "o", "of", "ac"]:
-            msg = f"unknown wo_mode '{default_mode}'"
-            raise ValueError(msg)
-        self.default_mode = default_mode
+        self.default_mode = utils.normalize_womode(default_mode)
 
     def gimme_file(
         self,
         lh5_file: str | Path | h5py.File,
-        mode: str = None,
+        mode: str | None = None,
         page_buffer: int = 0,
         **file_kwargs,
     ) -> h5py.File:
@@ -112,22 +132,22 @@ class LH5Store:
             return lh5_file
 
         lh5_file = str(Path(lh5_file))
+        full_path = self.base_path.joinpath(lh5_file)
 
         if mode is None:
-            mode = self.default_mode
+            if self.default_mode == "r":
+                mode = "r"
+            elif self.default_mode == "of" and full_path not in self.files:
+                mode = "w"
+            else:
+                mode = "a"
 
         if mode == "r":
-            lh5_file = utils.expand_path(lh5_file, base_path=self.base_path)
             file_kwargs["locking"] = self.locking
 
-        if lh5_file in self.files:
-            self.files.move_to_end(lh5_file)
-            return self.files[lh5_file]
-
-        if self.base_path != "":
-            full_path = Path(self.base_path) / lh5_file
-        else:
-            full_path = Path(lh5_file)
+        if full_path in self.files:
+            self.files.move_to_end(full_path)
+            return self.files[full_path]
 
         file_exists = full_path.exists()
         if mode != "r":
@@ -145,22 +165,29 @@ class LH5Store:
         if mode != "r" and file_exists:
             log.debug(f"opening existing file {full_path} in mode '{mode}'")
 
-        if mode == "w":
+        if page_buffer > 0 and (not full_path.is_file() or mode == "w"):
             file_kwargs.update(
                 {
                     "fs_strategy": "page",
                     "fs_page_size": page_buffer,
                 }
             )
+
         try:
             h5f = h5py.File(full_path, mode, **file_kwargs)
         except (OSError, FileExistsError) as oe:
-            raise LH5DecodeError(oe, full_path) from oe
+            # this error can indicate file corruption and prevent file truncation
+            # so we will manually recreate the file
+            if mode == "w" and "wrong version number in object header" in str(oe):
+                full_path.unlink()
+                h5f = h5py.File(full_path, "w", **file_kwargs)
+            else:
+                raise LH5DecodeError(oe, full_path) from oe
 
         if self.keep_open:
-            if isinstance(self.keep_open, int) and len(self.files) >= self.keep_open:
-                self.files.popitem(last=False)
-            self.files[lh5_file] = h5f
+            if self.keep_open is not True and len(self.files) >= self.keep_open:
+                self.files.popitem(last=False)[1].close()
+            self.files[full_path] = h5f
 
         return h5f
 
@@ -243,7 +270,7 @@ class LH5Store:
         group: str | h5py.Group = "/",
         start_row: int = 0,
         n_rows: int | None = None,
-        wo_mode: str = None,
+        wo_mode: str | None = None,
         write_start: int = 0,
         page_buffer: int = 0,
         **h5py_kwargs,
@@ -254,22 +281,15 @@ class LH5Store:
         --------
         .core.write
         """
-        if wo_mode is None and self.default_mode in ["r", "read"]:
-            wo_mode = "a"
-        if wo_mode == "write_safe":
-            wo_mode = "w"
-        if wo_mode == "append":
-            wo_mode = "a"
-        if wo_mode == "overwrite":
-            wo_mode = "o"
-        if wo_mode == "overwrite_file":
-            wo_mode = "of"
+        wo_mode = utils.normalize_womode(wo_mode)
+        if wo_mode is None:
+            wo_mode = self.default_mode
+            if wo_mode == "r" or (
+                wo_mode == "of" and self.base_path.joinpath(lh5_file) in self.files
+            ):
+                wo_mode = "a"
+        if wo_mode == "of":
             write_start = 0
-        if wo_mode == "append_column":
-            wo_mode = "ac"
-        if wo_mode not in ["w", "a", "o", "of", "ac"]:
-            msg = f"unknown wo_mode '{wo_mode}'"
-            raise ValueError(msg)
 
         # "mode" is for the h5df.File and wo_mode is for this function
         # In hdf5, 'a' is really "modify" -- in addition to appending, you can
@@ -296,15 +316,38 @@ class LH5Store:
             **h5py_kwargs,
         )
 
+    def close(self, lh5_file: str | None = None) -> None:
+        """Close a file in the store and remove from cache.
+
+        If ``lh5_file`` is ``None``, close all files.
+        """
+
+        if lh5_file is None:
+            for h5f in self.files.values():
+                h5f.close()
+            self.files.clear()
+        else:
+            full_path = self.base_path.joinpath(lh5_file)
+            if full_path in self.files:
+                self.files[full_path].close()
+                del self.files[full_path]
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        self.close()
+        return False
+
     def read_n_rows(self, name: str, lh5_file: str | Path | h5py.File) -> int | None:
         """Look up the number of rows in an Array-like object called `name` in `lh5_file`.
 
         Return ``None`` if it is a :class:`.Scalar` or a :class:`.Struct`.
         """
-        return utils.read_n_rows(name, self.gimme_file(lh5_file, "r"))
+        return utils.read_n_rows(name, self.gimme_file(lh5_file))
 
     def read_size_in_bytes(self, name: str, lh5_file: str | Path | h5py.File) -> int:
         """Look up the size (in bytes) of the object in memory. Will recursively
         crawl through all objects in a Struct or Table.
         """
-        return utils.read_size_in_bytes(name, self.gimme_file(lh5_file, "r"))
+        return utils.read_size_in_bytes(name, self.gimme_file(lh5_file))

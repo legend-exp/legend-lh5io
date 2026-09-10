@@ -6,12 +6,11 @@ import glob
 import logging
 import os
 import string
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
 import h5py
-from lgdo import types
 
 from . import _serializers
 from .exceptions import LH5DecodeError
@@ -19,63 +18,57 @@ from .exceptions import LH5DecodeError
 log = logging.getLogger(__name__)
 
 
-def get_buffer(
-    name: str,
-    lh5_file: str | Path | h5py.File | Sequence[str | Path | h5py.File],
-    size: int | None = None,
-    field_mask: Mapping[str, bool] | Sequence[str] | None = None,
-) -> types.LGDO:
-    """Returns an LGDO appropriate for use as a pre-allocated buffer.
-
-    Sets size to `size` if object has a size.
-    """
-    obj, _n_rows = _serializers._h5_read_lgdo(
-        lh5_file[name], n_rows=0, field_mask=field_mask
-    )
-
-    if hasattr(obj, "resize") and size is not None:
-        obj.resize(new_size=size)
-
-    return obj
-
-
 def read_n_rows(name: str, h5f: str | Path | h5py.File) -> int | None:
     """Look up the number of rows in an Array-like LGDO object on disk.
 
     Return ``None`` if `name` is a :class:`.Scalar` or a :class:`.Struct`.
     """
-    if not isinstance(h5f, h5py.File):
-        try:
-            h5f = h5py.File(h5f, "r", locking=False)
-        except (OSError, FileExistsError) as oe:
-            raise LH5DecodeError(oe, h5f, None) from oe
-
     try:
-        h5o = h5f[name].id
-    except KeyError as e:
-        msg = "not found"
-        raise LH5DecodeError(msg, h5f, name) from e
+        i_opened_file = False
+        if not isinstance(h5f, h5py.File):
+            try:
+                h5f = h5py.File(h5f, "r", locking=False)
+                i_opened_file = True
+            except (OSError, FileExistsError) as oe:
+                raise LH5DecodeError(oe, h5f) from oe
 
-    return _serializers.read.utils.read_n_rows(h5o, h5f.name, name)
+        try:
+            h5o = h5f[name].id
+        except KeyError as e:
+            msg = "not found"
+            raise LH5DecodeError(msg, h5f, name) from e
+
+        return _serializers.read.utils.read_n_rows(h5o, h5f.name, name)
+
+    finally:
+        if i_opened_file:
+            h5f.close()
 
 
 def read_size_in_bytes(name: str, h5f: str | Path | h5py.File) -> int | None:
     """Look up the size (in bytes) of an LGDO object in memory. Will crawl
     recursively through members of a Struct or Table.
     """
-    if not isinstance(h5f, h5py.File):
-        try:
-            h5f = h5py.File(h5f, "r", locking=False)
-        except (OSError, FileExistsError) as oe:
-            raise LH5DecodeError(oe, h5f) from oe
-
     try:
-        h5o = h5f[name].id
-    except KeyError as e:
-        msg = "not found"
-        raise LH5DecodeError(msg, h5f, name) from e
+        i_opened_file = False
+        if not isinstance(h5f, h5py.File):
+            try:
+                h5f = h5py.File(h5f, "r", locking=False)
+                i_opened_file = True
+            except (OSError, FileExistsError) as oe:
+                raise LH5DecodeError(oe, h5f) from oe
 
-    return _serializers.read.utils.read_size_in_bytes(h5o, h5f.name, name)
+        try:
+            h5o = h5f[name].id
+        except KeyError as e:
+            msg = "not found"
+            raise LH5DecodeError(msg, h5f, name) from e
+
+        return _serializers.read.utils.read_size_in_bytes(h5o, h5f.name, name)
+
+    finally:
+        if i_opened_file:
+            h5f.close()
 
 
 def get_h5_group(
@@ -232,3 +225,24 @@ def fmtbytes(num, suffix="B"):
             return f"{num:3.1f} {unit}{suffix}"
         num /= 1024.0
     return f"{num:.1f} Y{suffix}"
+
+
+def normalize_womode(wo_mode: str) -> str:
+    """Normalize wo_mode to single-character values and raises exception if
+    this cannot be done."""
+    if wo_mode is None:
+        return wo_mode
+
+    wo_mode = wo_mode.strip().lower()
+    mode = {
+        "read": "r",
+        "write_safe": "w",
+        "append": "a",
+        "overwrite": "o",
+        "overwrite_file": "of",
+        "append_column": "ac",
+    }.get(wo_mode, wo_mode)
+    if mode not in ("r", "w", "a", "o", "of", "ac"):
+        msg = f"Invalid wo_mode: {wo_mode}."
+        raise ValueError(msg)
+    return mode

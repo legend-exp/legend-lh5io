@@ -10,6 +10,7 @@ from lgdo import types
 from .... import compression
 from ... import datatype, utils
 from ...exceptions import LH5EncodeError
+from ..read.utils import read_n_rows
 from .array import _h5_write_array
 from .scalar import _h5_write_scalar
 from .vector_of_vectors import _h5_write_vector_of_vectors
@@ -34,20 +35,9 @@ def _h5_write_lgdo(
         k: h5py_kwargs[k] for k in h5py_kwargs & signature(h5py.File).parameters.keys()
     }
     h5py_kwargs = {k: h5py_kwargs[k] for k in h5py_kwargs - file_kwargs.keys()}
-    if wo_mode == "write_safe":
-        wo_mode = "w"
-    if wo_mode == "append":
-        wo_mode = "a"
-    if wo_mode == "overwrite":
-        wo_mode = "o"
-    if wo_mode == "overwrite_file":
-        wo_mode = "of"
+    wo_mode = utils.normalize_womode(wo_mode)
+    if wo_mode == "of":
         write_start = 0
-    if wo_mode == "append_column":
-        wo_mode = "ac"
-    if wo_mode not in ["w", "a", "o", "of", "ac"]:
-        msg = f"unknown wo_mode '{wo_mode}'"
-        raise LH5EncodeError(msg, lh5_file, group, name)
 
     # "mode" is for the h5df.File and wo_mode is for this function
     # In hdf5, 'a' is really "modify" -- in addition to appending, you can
@@ -294,9 +284,11 @@ def _h5_write_struct(
         # It doesn't matter what key we access, as all fields in the old table have the same size
         if (
             isinstance(obj, types.Table)
-            and old_group.attrs["datatype"][:6]
-            != "struct"  # structs dont care about size
-            and old_group[next(iter(old_group.keys()))].size != obj.size
+            and datatype.datatype(old_group.attrs["datatype"]) != "struct"
+            and read_n_rows(
+                next(iter(old_group.values())).id, lh5_file.name, old_group.name
+            )
+            != obj.size
         ):
             msg = (
                 f"Table sizes don't match. Trying to append column of size {obj.size} "

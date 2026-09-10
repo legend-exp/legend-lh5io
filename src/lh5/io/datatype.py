@@ -8,7 +8,7 @@ from lgdo import types
 
 _lgdo_datatype_map: dict[str, types.LGDO] = OrderedDict(
     [
-        (types.Scalar, r"^real$|^bool$|^complex$|^bool$|^string$"),
+        (types.Scalar, r"^real$|^bool$|^complex$|^string$"),
         (types.VectorOfVectors, r"^array<1>\{array<1>\{.+\}\}$"),
         (types.VectorOfEncodedVectors, r"^array<1>\{encoded_array<1>\{.+\}\}$"),
         (

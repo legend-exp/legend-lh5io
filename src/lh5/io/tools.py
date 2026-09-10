@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import fnmatch
 import logging
+from contextlib import ExitStack
 from copy import copy
 from pathlib import Path
 
@@ -38,41 +39,44 @@ def ls(
         + ("" if lh5_group == "" else f" (and group {lh5_group})")
     )
 
-    lh5_st = LH5Store()
     # To use recursively, make lh5_file a h5group instead of a string
-    if isinstance(lh5_file, (str, Path)):
-        lh5_file = lh5_st.gimme_file(str(Path(lh5_file)), "r")
-        if lh5_group.startswith("/"):
-            lh5_group = lh5_group[1:]
+    with ExitStack() as stack:
+        if isinstance(lh5_file, (str, Path)):
+            lh5_st = stack.enter_context(LH5Store(keep_open=True, default_mode="r"))
+            lh5_file = lh5_st.gimme_file(lh5_file)
+            if lh5_group.startswith("/"):
+                lh5_group = lh5_group[1:]
 
-    if lh5_group == "":
-        lh5_group = "*"
+        if lh5_group == "":
+            lh5_group = "*"
 
-    # get the first group in the group path
-    splitpath = lh5_group.split("/", 1)
-    # filter out objects that don't match lh5_group pattern
-    matchingkeys = fnmatch.filter(lh5_file.keys(), splitpath[0])
+        # get the first group in the group path
+        splitpath = lh5_group.split("/", 1)
+        # filter out objects that don't match lh5_group pattern
+        matchingkeys = fnmatch.filter(lh5_file.keys(), splitpath[0])
 
-    ret = []
-    # if there were no "/" in lh5_group just return the result
-    if len(splitpath) == 1:
-        ret = matchingkeys
+        ret = []
+        # if there were no "/" in lh5_group just return the result
+        if len(splitpath) == 1:
+            ret = matchingkeys
 
-    else:
-        for key in matchingkeys:
-            ret.extend([f"{key}/{path}" for path in ls(lh5_file[key], splitpath[1])])
+        else:
+            for key in matchingkeys:
+                ret.extend(
+                    [f"{key}/{path}" for path in ls(lh5_file[key], splitpath[1])]
+                )
 
-    if recursive:
-        rec_ret = copy(ret)
-        for obj in ret:
-            try:
-                rec_ret += ls(lh5_file, lh5_group=f"{obj}/", recursive=True)
-            except AttributeError:
-                continue
+        if recursive:
+            rec_ret = copy(ret)
+            for obj in ret:
+                try:
+                    rec_ret += ls(lh5_file, lh5_group=f"{obj}/", recursive=True)
+                except AttributeError:
+                    continue
 
-        return rec_ret
+            return rec_ret
 
-    return ret
+        return ret
 
 
 def show(
@@ -117,118 +121,124 @@ def show(
     │   └── values · array_of_equalsized_arrays<1,1>{real}
     └── wf_std · array<1>{real}
     """
-    # check tree depth if we are using it
-    if depth is not None and depth <= 0:
-        return
+    with ExitStack() as stack:
+        # check tree depth if we are using it
+        if depth is not None and depth <= 0:
+            return
 
-    # open file
-    if isinstance(lh5_file, (str, Path)):
-        try:
-            lh5_file = h5py.File(utils.expand_path(Path(lh5_file)), "r", locking=False)
-        except (OSError, FileExistsError) as oe:
-            raise LH5DecodeError(oe, lh5_file) from oe
-
-    # go to group
-    if lh5_group != "/":
-        lh5_file = lh5_file[lh5_group]
-
-    if header:
-        print(f"\033[1m{lh5_group}\033[0m")  # noqa: T201
-
-    # get an iterator over the keys in the group
-    it = iter(lh5_file)
-    key = None
-
-    # make sure there is actually something in this file/group
-    try:
-        key = next(it)  # get first key
-    except StopIteration:
-        print(f"{indent}└──  empty")  # noqa: T201
-        return
-
-    # loop over keys
-    while True:
-        is_link = False
-        link_type = lh5_file.get(key, getlink=True)
-        if isinstance(link_type, (h5py.SoftLink, h5py.ExternalLink)):
-            desc = f"-> {link_type.path}"
-            is_link = True
-
-        else:
-            val = lh5_file[key]
-
-            # we want to print the LGDO datatype
-            dtype = val.attrs.get("datatype", default="no datatype")
-            if dtype == "no datatype" and isinstance(val, h5py.Group):
-                dtype = "HDF5 group"
-
-            _attrs = ""
-            if attrs:
-                attrs_d = dict(val.attrs)
-                attrs_d.pop("datatype", "")
-                _attrs = "── " + str(attrs_d) if attrs_d else ""
-
-            desc = f"· {dtype} {_attrs}"
-
-        # is this the last key?
-        killme = False
-        try:
-            k_new = next(it)  # get next key
-        except StopIteration:
-            char = "└──"
-            killme = True  # we'll have to kill this loop later
-        else:
-            char = "├──"
-
-        print(f"{indent}{char} \033[1m{key}\033[0m {desc}")  # noqa: T201
-
-        if not is_link and detail and isinstance(val, h5py.Dataset):
-            val = lh5_file[key]
-            char = "|       "
-            if killme:
-                char = "        "
-            toprint = f"{indent}{char}"
+        # open file
+        if isinstance(lh5_file, (str, Path)):
             try:
-                toprint += f"\033[3mdtype\033[0m={val.dtype}"
-                toprint += f", \033[3mshape\033[0m={val.shape}"
-                toprint += f", \033[3mnbytes\033[0m={utils.fmtbytes(val.nbytes)}"
-                if (chunkshape := val.chunks) is None:
-                    toprint += ", \033[3mnumchunks\033[0m=contiguous"
-                else:
-                    toprint += f", \033[3mnumchunks\033[0m={val.id.get_num_chunks()}"
-                    toprint += f", \033[3mchunkshape\033[0m={chunkshape}"
-                toprint += ", \033[3mfilters\033[0m="
+                lh5_st = stack.enter_context(LH5Store(keep_open=True, default_mode="r"))
+                lh5_file = lh5_st.gimme_file(lh5_file)
+            except (OSError, FileExistsError) as oe:
+                raise LH5DecodeError(oe, lh5_file) from oe
 
-                numfilters = val.id.get_create_plist().get_nfilters()
-                if numfilters == 0:
-                    toprint += "None"
-                else:
-                    toprint += "("
-                    for i in range(numfilters):
-                        thisfilter = val.id.get_create_plist().get_filter(i)[3].decode()
-                        if "lz4" in thisfilter:
-                            thisfilter = "lz4"
-                        toprint += f"{thisfilter},"
-                    toprint += ")"
+        # go to group
+        if lh5_group != "/":
+            lh5_file = lh5_file[lh5_group]
 
-            except TypeError:
-                toprint += "(scalar)"
+        if header:
+            print(f"\033[1m{lh5_group}\033[0m")  # noqa: T201
 
-            print(toprint)  # noqa: T201
+        # get an iterator over the keys in the group
+        it = iter(lh5_file)
+        key = None
 
-        # if it's a group, call this function recursively
-        if not is_link and isinstance(val, h5py.Group):
-            show(
-                lh5_file[key],
-                indent=indent + ("    " if killme else "│   "),
-                header=False,
-                attrs=attrs,
-                depth=depth - 1 if depth else None,
-                detail=detail,
-            )
+        # make sure there is actually something in this file/group
+        try:
+            key = next(it)  # get first key
+        except StopIteration:
+            print(f"{indent}└──  empty")  # noqa: T201
+            return
 
-        # break or move to next key
-        if killme:
-            break
+        # loop over keys
+        while True:
+            is_link = False
+            link_type = lh5_file.get(key, getlink=True)
+            if isinstance(link_type, (h5py.SoftLink, h5py.ExternalLink)):
+                desc = f"-> {link_type.path}"
+                is_link = True
 
-        key = k_new
+            else:
+                val = lh5_file[key]
+
+                # we want to print the LGDO datatype
+                dtype = val.attrs.get("datatype", default="no datatype")
+                if dtype == "no datatype" and isinstance(val, h5py.Group):
+                    dtype = "HDF5 group"
+
+                _attrs = ""
+                if attrs:
+                    attrs_d = dict(val.attrs)
+                    attrs_d.pop("datatype", "")
+                    _attrs = "── " + str(attrs_d) if attrs_d else ""
+
+                desc = f"· {dtype} {_attrs}"
+
+            # is this the last key?
+            killme = False
+            try:
+                k_new = next(it)  # get next key
+            except StopIteration:
+                char = "└──"
+                killme = True  # we'll have to kill this loop later
+            else:
+                char = "├──"
+
+            print(f"{indent}{char} \033[1m{key}\033[0m {desc}")  # noqa: T201
+
+            if not is_link and detail and isinstance(val, h5py.Dataset):
+                val = lh5_file[key]
+                char = "|       "
+                if killme:
+                    char = "        "
+                toprint = f"{indent}{char}"
+                try:
+                    toprint += f"\033[3mdtype\033[0m={val.dtype}"
+                    toprint += f", \033[3mshape\033[0m={val.shape}"
+                    toprint += f", \033[3mnbytes\033[0m={utils.fmtbytes(val.nbytes)}"
+                    if (chunkshape := val.chunks) is None:
+                        toprint += ", \033[3mnumchunks\033[0m=contiguous"
+                    else:
+                        toprint += (
+                            f", \033[3mnumchunks\033[0m={val.id.get_num_chunks()}"
+                        )
+                        toprint += f", \033[3mchunkshape\033[0m={chunkshape}"
+                    toprint += ", \033[3mfilters\033[0m="
+
+                    numfilters = val.id.get_create_plist().get_nfilters()
+                    if numfilters == 0:
+                        toprint += "None"
+                    else:
+                        toprint += "("
+                        for i in range(numfilters):
+                            thisfilter = (
+                                val.id.get_create_plist().get_filter(i)[3].decode()
+                            )
+                            if "lz4" in thisfilter:
+                                thisfilter = "lz4"
+                            toprint += f"{thisfilter},"
+                        toprint += ")"
+
+                except TypeError:
+                    toprint += "(scalar)"
+
+                print(toprint)  # noqa: T201
+
+            # if it's a group, call this function recursively
+            if not is_link and isinstance(val, h5py.Group):
+                show(
+                    lh5_file[key],
+                    indent=indent + ("    " if killme else "│   "),
+                    header=False,
+                    attrs=attrs,
+                    depth=depth - 1 if depth else None,
+                    detail=detail,
+                )
+
+            # break or move to next key
+            if killme:
+                break
+
+            key = k_new

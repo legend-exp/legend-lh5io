@@ -16,7 +16,7 @@ from numpy.typing import ArrayLike
 
 from . import _serializers
 from .exceptions import LH5DecodeError
-from .utils import read_n_rows
+from .utils import normalize_womode, read_n_rows
 
 log = logging.getLogger(__name__)
 
@@ -335,10 +335,10 @@ def write(
         as an `obj` attribute.**
     """
 
-    if (
-        isinstance(lh5_file, str)
-        and not Path(lh5_file).is_file()
-        and wo_mode in ("w", "write_safe", "of", "overwrite_file")
+    wo_mode = normalize_womode(wo_mode)
+    if page_buffer > 0 and (
+        (isinstance(lh5_file, (str, Path)) and not Path(lh5_file).is_file())
+        or wo_mode in ("w", "of")
     ):
         h5py_kwargs.update(
             {

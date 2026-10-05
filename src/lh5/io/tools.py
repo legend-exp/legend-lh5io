@@ -44,8 +44,7 @@ def ls(
         if isinstance(lh5_file, (str, Path)):
             lh5_st = stack.enter_context(LH5Store(keep_open=True, default_mode="r"))
             lh5_file = lh5_st.gimme_file(lh5_file)
-            if lh5_group.startswith("/"):
-                lh5_group = lh5_group[1:]
+            lh5_group = lh5_group.removeprefix("/")
 
         if lh5_group == "":
             lh5_group = "*"

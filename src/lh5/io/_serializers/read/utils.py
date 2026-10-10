@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from collections import defaultdict
 from collections.abc import Collection, Mapping
+from contextlib import closing
 
 import h5py
 import numpy as np
@@ -10,7 +11,7 @@ from lgdo import types
 
 from ... import datatype
 from ...exceptions import LH5DecodeError
-from . import scalar
+from . import ndarray, scalar
 
 log = logging.getLogger(__name__)
 
@@ -113,18 +114,17 @@ def read_attrs(h5o, fname, oname):
     and return them as a dict. Assume all are strings or scalar types."""
     attrs = {}
     for i_attr in range(h5py.h5a.get_num_attrs(h5o)):
-        h5a = h5py.h5a.open(h5o, index=i_attr)
-        name = h5a.get_name().decode()
-        if h5a.shape != ():
-            msg = f"attribute {oname} is not a string or scalar"
-            raise LH5DecodeError(msg, fname, oname)
-        val = np.empty((), h5a.dtype)
-        h5a.read(val)
-        if h5a.get_type().get_class() == h5py.h5t.STRING:
-            attrs[name] = val.item().decode()
-        else:
-            attrs[name] = val.item()
-        h5a.close()
+        with closing(h5py.h5a.open(h5o, index=i_attr)) as h5a:
+            name = h5a.get_name().decode()
+            if h5a.shape != ():
+                msg = f"attribute {oname} is not a string or scalar"
+                raise LH5DecodeError(msg, fname, oname)
+            val = np.empty((), h5a.dtype)
+            h5a.read(val)
+            if h5a.get_type().get_class() == h5py.h5t.STRING:
+                attrs[name] = val.item().decode()
+            else:
+                attrs[name] = val.item()
     return attrs
 
 
@@ -138,6 +138,44 @@ def read_n_rows(h5o, fname, oname):
     type_attr = np.empty((), h5a.dtype)
     h5a.read(type_attr)
     type_attr = type_attr.item().decode()
+
+    # view of entries, get length of entries dataset
+    if type_attr == "view{entries}":
+        try:
+            h5d_ent = h5py.h5d.open(h5o, b"entries")
+        except KeyError:
+            msg = "entries not found"
+            raise LH5DecodeError(msg, fname, oname) from None
+
+        with closing(h5d_ent):
+            shape = h5d_ent.get_space().shape
+
+        if len(shape) != 1:
+            msg = "entries must be a 1D array of integers for view{entries}"
+            raise LH5DecodeError(msg, fname, oname)
+        return shape[0]
+
+    # view of slices, read entries and sum over lengths
+    if type_attr == "view{slices}":
+        # Read the entries for the view
+        try:
+            h5d_ent = h5py.h5d.open(h5o, b"entries")
+        except KeyError:
+            msg = "entries not found"
+            raise LH5DecodeError(msg, fname, oname) from None
+
+        with closing(h5d_ent):
+            entries, _, _ = ndarray._h5_read_ndarray(
+                h5d_ent,
+                fname,
+                f"{oname}/entries",
+            )
+
+        if len(entries.shape) != 2 or entries.shape[1] != 2:
+            msg = "entries must be a 2D array of shape (n, 2) for view{slices}"
+            raise LH5DecodeError(msg, fname, oname)
+        return np.sum(np.diff(entries, axis=1))
+
     lgdotype = datatype.datatype(type_attr)
 
     # scalars are dim-0 datasets
@@ -153,9 +191,8 @@ def read_n_rows(h5o, fname, oname):
         # read out each of the fields
         rows_read = None
         for field in datatype.get_struct_fields(type_attr):
-            obj = h5py.h5o.open(h5o, field.encode())
-            n_rows_read = read_n_rows(obj, fname, field)
-            obj.close()
+            with closing(h5py.h5o.open(h5o, field.encode())) as obj:
+                n_rows_read = read_n_rows(obj, fname, field)
             if rows_read is None:
                 rows_read = n_rows_read
             elif rows_read != n_rows_read:
@@ -168,17 +205,13 @@ def read_n_rows(h5o, fname, oname):
 
     # length of vector of vectors is the length of its cumulative_length
     if lgdotype is types.VectorOfVectors:
-        obj = h5py.h5o.open(h5o, b"cumulative_length")
-        n_rows = read_n_rows(obj, fname, "cumulative_length")
-        obj.close()
-        return n_rows
+        with closing(h5py.h5o.open(h5o, b"cumulative_length")) as obj:
+            return read_n_rows(obj, fname, "cumulative_length")
 
     # length of vector of encoded vectors is the length of its decoded_size
     if lgdotype in (types.VectorOfEncodedVectors, types.ArrayOfEncodedEqualSizedArrays):
-        obj = h5py.h5o.open(h5o, b"encoded_data")
-        n_rows = read_n_rows(obj, fname, "encoded_data")
-        obj.close()
-        return n_rows
+        with closing(h5py.h5o.open(h5o, b"encoded_data")) as obj:
+            return read_n_rows(obj, fname, "encoded_data")
 
     # return array length (without reading the array!)
     if issubclass(lgdotype, types.Array):
@@ -199,8 +232,26 @@ def read_size_in_bytes(h5o, fname, oname, field_mask=None):
     type_attr = np.empty((), h5a.dtype)
     h5a.read(type_attr)
     type_attr = type_attr.item().decode()
+
     lgdotype = datatype.datatype(type_attr)
     field_mask = build_field_mask(field_mask)
+
+    if lgdotype is datatype.View:
+        # open the dataset linked by the view
+        try:
+            h5o_data = h5py.h5o.open(h5o, b"data")
+        except KeyError as e:
+            msg = f"view {oname} does not link to data"
+            raise LH5DecodeError(msg, fname, oname) from e
+
+        # scale size of linked dataset by number of entries in view
+        with closing(h5o_data):
+            n_entry = read_n_rows(h5o, fname, oname)
+            n_total = read_n_rows(h5o_data, fname, f"{oname}/data")
+            size_total = read_size_in_bytes(
+                h5o_data, fname, f"{oname}/data", field_mask
+            )
+        return int(np.round(n_entry / n_total * size_total)) if n_total > 0 else 0
 
     # scalars are dim-0 datasets
     if lgdotype in (
@@ -225,34 +276,30 @@ def read_size_in_bytes(h5o, fname, oname, field_mask=None):
         all_fields = datatype.get_struct_fields(type_attr)
         selected_fields = eval_field_mask(field_mask, all_fields, fname, oname)
         for field, submask in selected_fields:
-            obj = h5py.h5o.open(h5o, field.encode())
-            size += read_size_in_bytes(obj, fname, field, submask)
-            obj.close()
+            with closing(h5py.h5o.open(h5o, field.encode())) as obj:
+                size += read_size_in_bytes(obj, fname, field, submask)
         return size
 
     # length of vector of vectors is the length of its cumulative_length
     if lgdotype is types.VectorOfVectors:
         size = 0
-        obj = h5py.h5o.open(h5o, b"cumulative_length")
-        size += read_size_in_bytes(obj, fname, "cumulative_length")
-        obj.close()
-        obj = h5py.h5o.open(h5o, b"flattened_data")
-        size += read_size_in_bytes(obj, fname, "flattened_data")
-        obj.close()
+        with closing(h5py.h5o.open(h5o, b"cumulative_length")) as obj:
+            size += read_size_in_bytes(obj, fname, "cumulative_length")
+        with closing(h5py.h5o.open(h5o, b"flattened_data")) as obj:
+            size += read_size_in_bytes(obj, fname, "flattened_data")
         return size
 
     # length of vector of encoded vectors is the length of its decoded_size
     if lgdotype is types.ArrayOfEncodedEqualSizedArrays:
-        obj = h5py.h5o.open(h5o, b"decoded_size")
-        size = scalar._h5_read_scalar(obj, fname, "decoded_size")[0].value
-        obj.close()
+        with closing(h5py.h5o.open(h5o, b"decoded_size")) as obj:
+            size = scalar._h5_read_scalar(obj, fname, "decoded_size")[0].value
 
-        obj = h5py.h5o.open(h5o, b"encoded_data")
-        cl = h5py.h5o.open(obj, b"cumulative_length")
-        size *= cl.shape[0]
-        cl.close()
-        size *= 4  # TODO: UPDATE WHEN CODECS SUPPORT MORE DTYPES
-        obj.close()
+        with (
+            closing(h5py.h5o.open(h5o, b"encoded_data")) as obj,
+            closing(h5py.h5o.open(obj, b"cumulative_length")) as cl,
+        ):
+            size *= cl.shape[0]
+            size *= 4  # TODO: UPDATE WHEN CODECS SUPPORT MORE DTYPES
 
         return size
 

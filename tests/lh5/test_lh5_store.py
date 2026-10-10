@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 import awkward as ak
 import h5py
 import lgdo
@@ -1024,3 +1026,539 @@ def test_read_histogram_multiple(lgnd_test_data):
     file = lgnd_test_data.get_path("lh5/lgdo-histograms.lh5")
     with pytest.raises(lh5.io.exceptions.LH5DecodeError):
         lh5.read("test_histogram_range", [file, file])
+
+
+def test_views(tmptestdir, caplog):
+    test_file = f"{tmptestdir}/test_view.lh5"
+    external_file = f"{tmptestdir}/test_view_external.lh5"
+
+    array = lgdo.Array(np.arange(100, dtype=np.int64))
+    array2 = lgdo.Array(-np.arange(100, dtype=np.int64))
+
+    entries_1d = np.array([1, 2, 3, 5, 8, 13, 21, 34, 55, 89], dtype=np.int64)
+    entries_2d = np.array([[0, 10], [20, 40], [60, 80], [90, 100]], dtype=np.int64)
+    expected_1d = np.copy(entries_1d)
+    expected_2d = np.concatenate(
+        [np.arange(a, b, dtype=np.int64) for a, b in entries_2d]
+    )
+
+    with lh5.LH5Store(keep_open=True, default_mode="of") as store:
+        store.write(array, "array", test_file, group="/data")
+        store.write(array2, "array2", test_file, group="/data")
+
+        store.write_view(
+            "/data/array",
+            entries_1d,
+            "hard_1d",
+            test_file,
+            link_type="hard",
+            group="/views",
+        )
+
+        store.write_view(
+            "/data/array",
+            entries_1d,
+            "soft_1d",
+            test_file,
+            link_type="soft",
+            group="/views",
+        )
+
+        store.write_view(
+            "/data/array",
+            entries_1d,
+            "external_1d",
+            external_file,
+            link_type="external",
+            external_file=test_file,
+            group="/views",
+        )
+
+        store.write_view(
+            "/data/array",
+            entries_2d,
+            "hard_2d",
+            test_file,
+            link_type="hard",
+            group="/views",
+        )
+
+        store.write_view(
+            "/data/array",
+            entries_2d,
+            "soft_2d",
+            test_file,
+            link_type="soft",
+            group="/views",
+        )
+
+        store.write_view(
+            "/data/array",
+            entries_2d,
+            "external_2d",
+            external_file,
+            link_type="external",
+            external_file=test_file,
+            group="/views",
+        )
+
+    with lh5.LH5Store(keep_open=True, default_mode="r") as store:
+        lh5_file = store.gimme_file(test_file)
+        ext_file = store.gimme_file(external_file)
+
+        assert store.read_n_rows("/views/hard_1d", lh5_file) == len(expected_1d)
+        assert (
+            store.read_size_in_bytes("/views/hard_1d", lh5_file) == expected_1d.nbytes
+        )
+        ar_h1d = store.read("/views/hard_1d", test_file)
+        assert isinstance(ar_h1d, types.Array)
+        assert np.all(ar_h1d.nda == expected_1d)
+        assert isinstance(
+            lh5_file["views/hard_1d"].get("data", getlink=True), h5py.HardLink
+        )
+
+        assert store.read_n_rows("/views/soft_1d", lh5_file) == len(expected_1d)
+        assert (
+            store.read_size_in_bytes("/views/soft_1d", lh5_file) == expected_1d.nbytes
+        )
+        ar_s1d = store.read("/views/soft_1d", test_file)
+        assert isinstance(ar_s1d, types.Array)
+        assert np.all(ar_s1d.nda == expected_1d)
+        assert isinstance(
+            lh5_file["views/soft_1d"].get("data", getlink=True), h5py.SoftLink
+        )
+
+        assert store.read_n_rows("/views/external_1d", external_file) == len(
+            expected_1d
+        )
+        assert (
+            store.read_size_in_bytes("/views/external_1d", external_file)
+            == expected_1d.nbytes
+        )
+        ar_e1d = store.read("/views/external_1d", external_file)
+        assert isinstance(ar_e1d, types.Array)
+        assert np.all(ar_e1d.nda == expected_1d)
+        assert isinstance(
+            ext_file["views/external_1d"].get("data", getlink=True), h5py.ExternalLink
+        )
+
+        assert store.read_n_rows("/views/hard_2d", lh5_file) == len(expected_2d)
+        assert (
+            store.read_size_in_bytes("/views/hard_2d", lh5_file) == expected_2d.nbytes
+        )
+        ar_h2d = store.read("/views/hard_2d", test_file)
+        assert isinstance(ar_h2d, types.Array)
+        assert np.all(ar_h2d.nda == expected_2d)
+        assert isinstance(
+            lh5_file["views/hard_2d"].get("data", getlink=True), h5py.HardLink
+        )
+
+        assert store.read_n_rows("/views/soft_2d", lh5_file) == len(expected_2d)
+        assert (
+            store.read_size_in_bytes("/views/soft_2d", lh5_file) == expected_2d.nbytes
+        )
+        ar_s2d = store.read("/views/soft_2d", test_file)
+        assert isinstance(ar_s2d, types.Array)
+        assert np.all(ar_s2d.nda == expected_2d)
+        assert isinstance(
+            lh5_file["views/soft_2d"].get("data", getlink=True), h5py.SoftLink
+        )
+
+        assert store.read_n_rows("/views/external_2d", external_file) == len(
+            expected_2d
+        )
+        assert (
+            store.read_size_in_bytes("/views/external_2d", external_file)
+            == expected_2d.nbytes
+        )
+        ar_e2d = store.read("/views/external_2d", external_file)
+        assert isinstance(ar_e2d, types.Array)
+        assert np.all(ar_e2d.nda == expected_2d)
+        assert isinstance(
+            ext_file["views/external_2d"].get("data", getlink=True), h5py.ExternalLink
+        )
+
+        del lh5_file
+        del ext_file
+
+    # we shouldn't be able to write_safe to an existing view...
+    with (
+        lh5.LH5Store(keep_open=True, default_mode="w") as store,
+        pytest.raises(lh5.io.exceptions.LH5EncodeError),
+    ):
+        store.write_view(
+            "/data/array",
+            entries_1d,
+            "hard_1d",
+            test_file,
+            link_type="hard",
+            group="/views",
+        )
+
+    # append
+    entries_app = np.array([91, 92, 93, 94, 95], dtype=np.int64)
+    expected_app = np.concatenate([expected_1d, entries_app])
+    with lh5.LH5Store(keep_open=True, default_mode="a") as store:
+        store.write_view(
+            "/data/array",
+            entries_app,
+            "hard_1d",
+            test_file,
+            link_type="hard",
+            group="/views",
+        )
+
+        store.write_view(
+            "/data/array",
+            entries_app,
+            "soft_1d",
+            test_file,
+            link_type="soft",
+            group="/views",
+        )
+
+        store.write_view(
+            "/data/array",
+            entries_app,
+            "external_1d",
+            external_file,
+            link_type="external",
+            external_file=test_file,
+            group="/views",
+        )
+
+        # error if we use a different array
+        with pytest.raises(lh5.io.exceptions.LH5EncodeError):
+            store.write_view(
+                "/data/array2",
+                entries_app,
+                "hard_1d",
+                test_file,
+                link_type="hard",
+                group="/views",
+            )
+
+        with pytest.raises(lh5.io.exceptions.LH5EncodeError):
+            store.write_view(
+                "/data/array2",
+                entries_app,
+                "soft_1d",
+                test_file,
+                link_type="soft",
+                group="/views",
+            )
+
+        with pytest.raises(lh5.io.exceptions.LH5EncodeError):
+            store.write_view(
+                "/data/array2",
+                entries_app,
+                "external_1d",
+                external_file,
+                link_type="external",
+                external_file=test_file,
+                group="/views",
+            )
+
+    with lh5.LH5Store(keep_open=True, default_mode="r") as store:
+        lh5_file = store.gimme_file(test_file)
+        ext_file = store.gimme_file(external_file)
+
+        ar_h1d = store.read("/views/hard_1d", test_file)
+        assert isinstance(ar_h1d, types.Array)
+        assert np.all(ar_h1d.nda == expected_app)
+        assert isinstance(
+            lh5_file["views/hard_1d"].get("data", getlink=True), h5py.HardLink
+        )
+
+        ar_s1d = store.read("/views/soft_1d", test_file)
+        assert isinstance(ar_s1d, types.Array)
+        assert np.all(ar_s1d.nda == expected_app)
+        assert isinstance(
+            lh5_file["views/soft_1d"].get("data", getlink=True), h5py.SoftLink
+        )
+
+        ar_e1d = store.read("/views/external_1d", external_file)
+        assert isinstance(ar_e1d, types.Array)
+        assert np.all(ar_e1d.nda == expected_app)
+        assert isinstance(
+            ext_file["views/external_1d"].get("data", getlink=True), h5py.ExternalLink
+        )
+
+        del lh5_file
+        del ext_file
+
+    # overwrite
+    with lh5.LH5Store(keep_open=True, default_mode="o") as store:
+        store.write_view(
+            "/data/array2",
+            entries_1d,
+            "hard_1d",
+            test_file,
+            link_type="hard",
+            group="/views",
+        )
+
+        store.write_view(
+            "/data/array2",
+            entries_1d,
+            "soft_1d",
+            test_file,
+            link_type="soft",
+            group="/views",
+        )
+
+        store.write_view(
+            "/data/array2",
+            entries_1d,
+            "external_1d",
+            external_file,
+            link_type="external",
+            external_file=test_file,
+            group="/views",
+        )
+
+    with lh5.LH5Store(keep_open=True, default_mode="r") as store:
+        ar_h1d = store.read("/views/hard_1d", test_file)
+        assert isinstance(ar_h1d, types.Array)
+        assert np.all(ar_h1d.nda == -expected_1d)
+
+        ar_s1d = store.read("/views/soft_1d", test_file)
+        assert isinstance(ar_s1d, types.Array)
+        assert np.all(ar_s1d.nda == -expected_1d)
+
+        ar_e1d = store.read("/views/external_1d", external_file)
+        assert isinstance(ar_e1d, types.Array)
+        assert np.all(ar_e1d.nda == -expected_1d)
+
+    # Test automatic deduction of link type from inputs
+    with lh5.LH5Store(keep_open=True, default_mode="o") as store:
+        lh5_file = store.gimme_file(test_file)
+        data_array = store.gimme_group("/data/array", lh5_file)
+        data_array2 = store.gimme_group("/data/array2", lh5_file)
+
+        store.write_view(
+            data_array,
+            entries_1d,
+            "hard_1d",
+            test_file,
+            group="/views",
+        )
+
+        store.write_view(
+            "/data/array",
+            entries_1d,
+            "soft_1d",
+            test_file,
+            group="/views",
+        )
+
+        store.write_view(
+            data_array,
+            entries_1d,
+            "external_1d",
+            external_file,
+            external_file=test_file,
+            group="/views",
+        )
+
+        # should error if group doesn't match external file
+        with pytest.raises(lh5.io.exceptions.LH5EncodeError):
+            store.write_view(
+                data_array,
+                entries_1d,
+                "external_1d",
+                external_file,
+                external_file=external_file,
+                group="/views",
+            )
+
+        # should figure out file on its own if it is external
+        store.write_view(
+            data_array2,
+            entries_1d,
+            "external2_1d",
+            external_file,
+            group="/views",
+        )
+
+        del lh5_file
+        del data_array
+        del data_array2
+
+    with lh5.LH5Store(keep_open=True, default_mode="r") as store:
+        ar_h1d = store.read("/views/hard_1d", test_file)
+        assert isinstance(ar_h1d, types.Array)
+        assert np.all(ar_h1d.nda == expected_1d)
+
+        ar_s1d = store.read("/views/soft_1d", test_file)
+        assert isinstance(ar_s1d, types.Array)
+        assert np.all(ar_s1d.nda == expected_1d)
+
+        ar_e1d = store.read("/views/external_1d", external_file)
+        assert isinstance(ar_e1d, types.Array)
+        assert np.all(ar_e1d.nda == expected_1d)
+
+        ar_e1d = store.read("/views/external2_1d", external_file)
+        assert isinstance(ar_e1d, types.Array)
+        assert np.all(ar_e1d.nda == -expected_1d)
+
+    # Test fancy indexed reading on views
+    with lh5.LH5Store(keep_open=True, default_mode="of") as store:
+        # start with a clean file
+        store.write(array, "array", test_file, group="/data")
+        store.write(array2, "array2", test_file, group="/data")
+
+        store.write_view(
+            "/data/array",
+            entries_1d,
+            "hard_1d",
+            test_file,
+            link_type="hard",
+            group="/views",
+        )
+
+        store.write_view(
+            "/data/array",
+            entries_2d,
+            "hard_2d",
+            test_file,
+            link_type="hard",
+            group="/views",
+        )
+
+    entries_1d = np.array([1, 2, 3, 5, 8, 13, 21, 34, 55, 89], dtype=np.int64)
+    entries_2d = np.array([[0, 10], [20, 40], [60, 80], [90, 100]], dtype=np.int64)
+    with lh5.LH5Store(keep_open=True, default_mode="r") as store:
+        # start_row and n_rows with 1d view
+        ar = store.read("/views/hard_1d", test_file, start_row=3, n_rows=4)
+        assert np.all(ar.nda == np.array([5, 8, 13, 21]))
+
+        # 1d mask with 1d view
+        ar = store.read("/views/hard_1d", test_file, idx=np.array([0, 3, 6, 9]))
+        assert np.all(ar.nda == np.array([1, 5, 21, 89]))
+
+        # 2d mask with 1d view
+        ar = store.read(
+            "/views/hard_1d", test_file, idx=np.array([[0, 3], [5, 6], [7, 10]])
+        )
+        assert np.all(ar.nda == np.array([1, 2, 3, 13, 34, 55, 89]))
+
+        # start_row and n_rows with 2d view
+        ar = store.read("/views/hard_2d", test_file, start_row=8, n_rows=4)
+        assert np.all(ar.nda == np.array([8, 9, 20, 21]))
+        ar = store.read("/views/hard_2d", test_file, start_row=10, n_rows=20)
+        assert np.all(ar.nda == np.arange(20, 40))
+
+        # 1d mask with 2d view. Make sure to get in some boundary values
+        ar = store.read(
+            "/views/hard_2d", test_file, idx=np.array([0, 3, 9, 10, 55, 59])
+        )
+        assert np.all(ar.nda == np.array([0, 3, 9, 20, 95, 99]))
+        caplog.clear()
+        with caplog.at_level(logging.WARNING):
+            ar = store.read("/views/hard_2d", test_file, idx=np.array([60, 65]))
+            assert len(ar) == 0
+            assert len(caplog.records) == 2
+
+        # 2d mask with 2d view
+        ar = store.read(
+            "/views/hard_2d",
+            test_file,
+            idx=np.array([[0, 3], [5, 7], [8, 10], [30, 32], [48, 52], [58, 60]]),
+        )
+        assert np.all(
+            ar.nda == np.array([0, 1, 2, 5, 6, 8, 9, 60, 61, 78, 79, 90, 91, 98, 99])
+        )
+        caplog.clear()
+        with caplog.at_level(logging.WARNING):
+            ar = store.read("/views/hard_2d", test_file, idx=np.array([[58, 62]]))
+            assert np.all(ar.nda == np.array([98, 99]))
+            assert len(caplog.records) == 1
+        caplog.clear()
+        with caplog.at_level(logging.WARNING):
+            ar = store.read("/views/hard_2d", test_file, idx=np.array([[60, 62]]))
+            assert len(ar) == 0
+            assert len(caplog.records) == 2
+
+    # Test other sorts of errors...
+    with lh5.LH5Store(keep_open=True, default_mode="a") as store:
+        with pytest.raises(TypeError):
+            store.write_view(
+                "/data/array",
+                np.array(entries_1d, dtype="float32"),
+                "hard_1d",
+                test_file,
+                link_type="hard",
+                group="/views",
+            )
+
+        with pytest.raises(lh5.io.exceptions.LH5EncodeError):
+            store.write_view(
+                "/data/array",
+                np.array([5, 4, 3, 2, 1], dtype="int64"),
+                "hard_1d",
+                test_file,
+                link_type="hard",
+                group="/views",
+            )
+
+        with pytest.raises(lh5.io.exceptions.LH5EncodeError):
+            store.write_view(
+                "/data/array",
+                np.arange(12, dtype="int64").reshape((3, 4)),
+                "hard_1d",
+                test_file,
+                link_type="hard",
+                group="/views",
+            )
+
+        with pytest.raises(ValueError):
+            store.write_view(
+                "/data/array",
+                entries_1d,
+                "hard_1d",
+                test_file,
+                link_type="hard",
+                external_file=external_file,
+                group="/views",
+            )
+
+        with pytest.raises(ValueError):
+            store.write_view(
+                "/data/array",
+                entries_1d,
+                "soft_1d",
+                test_file,
+                link_type="soft",
+                external_file=external_file,
+                group="/views",
+            )
+
+        store.write_view(
+            "/data/array3",
+            entries_1d,
+            "soft_missing",
+            test_file,
+            link_type="soft",
+            group="/views",
+        )
+        with pytest.raises(lh5.io.exceptions.LH5DecodeError):
+            store.read("/views/soft_missing", test_file)
+
+    # test with empty entries list
+    with lh5.LH5Store(keep_open=True, default_mode="of") as store:
+        store.write(array, "array", test_file, group="/data")
+
+        store.write_view(
+            "/data/array",
+            np.array([], dtype="int64").reshape((0,)),
+            "hard_1d",
+            test_file,
+            link_type="hard",
+            group="/views",
+        )
+
+    with lh5.LH5Store(keep_open=True, default_mode="r") as store:
+        ar_h1d = store.read("/views/hard_1d", test_file)
+        assert isinstance(ar_h1d, types.Array)
+        assert np.all(ar_h1d.nda == np.array([], dtype="int64"))

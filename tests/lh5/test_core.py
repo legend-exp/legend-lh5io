@@ -3,6 +3,7 @@ from __future__ import annotations
 import lgdo
 import numpy as np
 import pytest
+from lgdo import types
 
 import lh5
 
@@ -104,3 +105,26 @@ def test_read_hdf5plugin_compression(lgnd_file_new_format):
     lh5_obj = lh5.read("/raw/B00000D/baseline", lgnd_file_new_format)
     assert isinstance(lh5_obj, lgdo.Array)
     assert lh5_obj.nda[0] == 14620
+
+
+def test_views(tmptestdir):
+    # Note: this test just tests core.write_view, not the inner workings.
+    # test_lh5_store has more extensive tests
+    test_file = f"{tmptestdir}/test_view.lh5"
+    array = lgdo.Array(np.arange(100, dtype=np.int64))
+    entries_1d = np.array([1, 2, 3, 5, 8, 13, 21, 34, 55, 89], dtype=np.int64)
+    expected_1d = np.copy(entries_1d)
+
+    lh5.write(array, "array", test_file, group="/data")
+    lh5.write_view(
+        "/data/array",
+        entries_1d,
+        "hard_1d",
+        test_file,
+        link_type="hard",
+        group="/views",
+    )
+
+    ar_h1d = lh5.read("/views/hard_1d", test_file)
+    assert isinstance(ar_h1d, types.Array)
+    assert np.all(ar_h1d.nda == expected_1d)

@@ -15,6 +15,7 @@ from .io import (
     read_n_rows,
     show,
     write,
+    write_view,
 )
 
 __all__ = [
@@ -28,4 +29,5 @@ __all__ = [
     "read_n_rows",
     "show",
     "write",
+    "write_view",
 ]

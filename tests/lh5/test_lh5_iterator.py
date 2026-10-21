@@ -160,6 +160,14 @@ def more_lgnd_files(lgnd_test_data):
                 "lh5/prod-ref-l200/generated/tier/hit/cal/p03/r001/l200-p03-r001-cal-20230318T012228Z-tier_hit.lh5"
             ),
         ],
+        [
+            lgnd_test_data.get_path(
+                "lh5/prod-ref-l200/generated/tier/tcm/cal/p03/r001/l200-p03-r001-cal-20230318T012144Z-tier_tcm.lh5"
+            ),
+            lgnd_test_data.get_path(
+                "lh5/prod-ref-l200/generated/tier/tcm/cal/p03/r001/l200-p03-r001-cal-20230318T012228Z-tier_tcm.lh5"
+            ),
+        ],
     ]
 
 
@@ -1155,6 +1163,94 @@ def test_safe_mode(more_lgnd_files):
     with pytest.raises(RuntimeError):
         for _ in lh5_it:
             pass
+
+
+def test_iterate_views(lgnd_test_data):
+    files = [
+        lgnd_test_data.get_path(
+            "lh5/prod-ref-l200/generated/tier/tcm/cal/p03/r001/l200-p03-r001-cal-20230318T012144Z-tier_tcm.lh5"
+        ),
+        lgnd_test_data.get_path(
+            "lh5/prod-ref-l200/generated/tier/tcm/cal/p03/r001/l200-p03-r001-cal-20230318T012228Z-tier_tcm.lh5"
+        ),
+        lgnd_test_data.get_path(
+            "lh5/prod-ref-l200/generated/tier/tcm/phy/p03/r001/l200-p03-r001-phy-20230322T160139Z-tier_tcm.lh5"
+        ),
+        lgnd_test_data.get_path(
+            "lh5/prod-ref-l200/generated/tier/tcm/phy/p03/r001/l200-p03-r001-phy-20230322T170202Z-tier_tcm.lh5"
+        ),
+    ]
+
+    full_tcms = [read("hardware_tcm_1", f) for f in files]
+    chans = [1084803, 1084804, 1121600]
+    groups = [f"ch{ch}/hardware_tcm_1" for ch in chans]
+
+    # calibration files are view{entries}
+    exp_out_cal = []
+    for tcm in full_tcms[:2]:
+        for ch in chans:
+            entries = np.flatnonzero(ak.any(tcm.view_as("ak").table_key == ch, axis=-1))
+            for sl in [slice(0, 5), slice(5, 10)]:
+                exp_out_cal.append(tcm[entries[sl]])
+
+    cal_it = LH5Iterator(
+        files[:2],
+        groups,
+        buffer_len=5,
+    )
+    for tb_it, tb_exp in zip(cal_it, exp_out_cal, strict=True):
+        assert tb_it == tb_exp
+
+    # physics files are view{slices}; will just be full tcm!
+    exp_out_phy = []
+    for tcm in full_tcms[2:]:
+        for _ in chans:
+            for sl in [slice(0, 5), slice(5, 10)]:
+                exp_out_phy.append(tcm[sl])
+
+    cal_it = LH5Iterator(
+        files[2:],
+        groups,
+        buffer_len=5,
+    )
+    for tb_it, tb_exp in zip(cal_it, exp_out_phy, strict=True):
+        assert tb_it == tb_exp
+
+    # test combined
+    lh5_it = LH5Iterator(
+        files,
+        groups,
+        buffer_len=5,
+    )
+    for tb_it, tb_exp in zip(lh5_it, exp_out_cal + exp_out_phy, strict=True):
+        assert tb_it == tb_exp
+
+    # test with entry list
+    lh5_it = LH5Iterator(
+        files,
+        groups,
+        buffer_len=5,
+        entry_list=[1, 2, 3, 5, 8, 13, 21, 34, 55, 89],
+    )
+    exp_out = [
+        [
+            exp_out_cal[0][[1]],
+            exp_out_cal[0][[2]],
+            exp_out_cal[0][[3]],
+            exp_out_cal[1][[0]],
+            exp_out_cal[1][[3]],
+        ],
+        [
+            exp_out_cal[2][[3]],
+            exp_out_cal[4][[1]],
+            exp_out_cal[6][[4]],
+            exp_out_cal[11][[0]],
+            exp_out_phy[5][[4]],
+        ],
+    ]
+
+    for tb, exp_entries in zip(lh5_it, exp_out, strict=True):
+        assert all(tb[[i]] == exp_entries[i] for i in range(5))
 
 
 def test_pickle_iterator(more_lgnd_files):

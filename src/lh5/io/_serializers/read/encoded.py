@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import sys
+from contextlib import closing
 
 import h5py
 from lgdo.types import (
@@ -68,41 +69,38 @@ def _h5_read_encoded_array(
         encoded_data_buf = obj_buf.encoded_data
 
     if lgdotype is VectorOfEncodedVectors:
-        h5o = h5py.h5o.open(h5g, b"decoded_size")
-        decoded_size, _ = _h5_read_array(
+        with closing(h5py.h5o.open(h5g, b"decoded_size")) as h5o:
+            decoded_size, _ = _h5_read_array(
+                h5o,
+                fname,
+                f"{oname}/decoded_size",
+                start_row=start_row,
+                n_rows=n_rows,
+                idx=idx,
+                obj_buf=None if decompress else decoded_size_buf,
+                obj_buf_start=0 if decompress else obj_buf_start,
+            )
+    else:
+        with closing(h5py.h5o.open(h5g, b"decoded_size")) as h5o:
+            decoded_size, _ = _h5_read_scalar(
+                h5o,
+                fname,
+                f"{oname}/decoded_size",
+                obj_buf=None if decompress else decoded_size_buf,
+            )
+
+    # read out encoded_data, a VectorOfVectors
+    with closing(h5py.h5o.open(h5g, b"encoded_data")) as h5o:
+        encoded_data, n_rows_read = _h5_read_vector_of_vectors(
             h5o,
             fname,
-            f"{oname}/decoded_size",
+            f"{oname}/encoded_data",
             start_row=start_row,
             n_rows=n_rows,
             idx=idx,
-            obj_buf=None if decompress else decoded_size_buf,
+            obj_buf=None if decompress else encoded_data_buf,
             obj_buf_start=0 if decompress else obj_buf_start,
         )
-        h5o.close()
-    else:
-        h5o = h5py.h5o.open(h5g, b"decoded_size")
-        decoded_size, _ = _h5_read_scalar(
-            h5o,
-            fname,
-            f"{oname}/decoded_size",
-            obj_buf=None if decompress else decoded_size_buf,
-        )
-        h5o.close()
-
-    # read out encoded_data, a VectorOfVectors
-    h5o = h5py.h5o.open(h5g, b"encoded_data")
-    encoded_data, n_rows_read = _h5_read_vector_of_vectors(
-        h5o,
-        fname,
-        f"{oname}/encoded_data",
-        start_row=start_row,
-        n_rows=n_rows,
-        idx=idx,
-        obj_buf=None if decompress else encoded_data_buf,
-        obj_buf_start=0 if decompress else obj_buf_start,
-    )
-    h5o.close()
 
     # return the still encoded data in the buffer object, if there
     if obj_buf is not None and not decompress:

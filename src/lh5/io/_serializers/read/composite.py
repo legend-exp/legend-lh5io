@@ -432,7 +432,7 @@ def _h5_read_histogram(
     )
 
     binning = []
-    for _, a in struct.binning.items():
+    for a in struct.binning.values():
         be = a.binedges
         if isinstance(be, Struct):
             b = (None, be.first.value, be.last.value, be.step.value, a.closedleft.value)

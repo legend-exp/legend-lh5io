@@ -10,7 +10,7 @@ from functools import partial
 from itertools import chain
 from queue import Empty, Queue
 from threading import Event, Thread
-from typing import Any, Literal
+from typing import Any, Literal, Self
 
 import awkward as ak
 import numpy as np
@@ -188,7 +188,7 @@ class LH5Iterator(Iterator):
             self.lh5_files = [expand_path(lh5_files, list=True, base_path=base_path)]
         elif not isinstance(lh5_files, Collection):
             msg = "lh5_files must be a string or list of strings"
-            raise ValueError(msg)
+            raise TypeError(msg)
         else:
             self.lh5_files = []
             for f in lh5_files:
@@ -218,7 +218,7 @@ class LH5Iterator(Iterator):
                 group_data = [group_data] * len(self.lh5_files)
         elif not isinstance(groups, Collection):
             msg = "group must be a string or collection of strings"
-            raise ValueError(msg)
+            raise TypeError(msg)
         elif all(isinstance(g, str) for g in groups):
             self.groups = [groups] * len(self.lh5_files)
             if group_data is not None:
@@ -665,7 +665,7 @@ class LH5Iterator(Iterator):
         """
         if not isinstance(friend, LH5Iterator):
             msg = "Friend must be an LH5Iterator"
-            raise ValueError(msg)
+            raise TypeError(msg)
 
         if self.safe_mode and self.n_datasets != friend.n_datasets:
             msg = (
@@ -1028,7 +1028,7 @@ class LH5Iterator(Iterator):
         terminate: Callable[[LH5Iterator], None] = None,
         processes: int = None,
         executor: Executor = None,
-        executor_mode: Literal["process", "thread", None] = None,
+        executor_mode: Literal["process", "thread"] | None = None,
         progress_queue: Queue = None,
         job_id: int | Collection[int] = 0,
     ) -> Iterator[Any]:
@@ -1217,7 +1217,7 @@ class LH5Iterator(Iterator):
         fields: Collection[str] | Mapping[str, str | None] = None,
         processes: Executor | int = None,
         executor: Executor = None,
-        executor_mode: Literal["process", "thread", None] = None,
+        executor_mode: Literal["process", "thread"] | None = None,
         library: str = None,
         progress: progress.Progress | console.Console | bool = True,
     ):
@@ -1379,7 +1379,7 @@ class LH5Iterator(Iterator):
         keys: Collection[str] | str = None,
         processes: Executor | int = None,
         executor: Executor = None,
-        executor_mode: Literal["process", "thread", None] = None,
+        executor_mode: Literal["process", "thread"] | None = None,
         progress: progress.Progress | console.Console | bool = True,
         **hist_kwargs,
     ) -> Hist:
@@ -1810,7 +1810,7 @@ class MapProgress(Thread):
         self.progress.refresh()
         self.progress.stop()
 
-    def __enter__(self) -> MapProgress:
+    def __enter__(self) -> Self:
         self.start()
         return self
 

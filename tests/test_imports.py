@@ -31,6 +31,6 @@ def test_all_names_resolved(modname):
 
 def test_top_level_star_import():
     namespace: dict = {}
-    exec("from lh5 import *", namespace)
+    exec("from lh5 import *", namespace)  # noqa:S102
     for name in lh5.__all__:
         assert name in namespace

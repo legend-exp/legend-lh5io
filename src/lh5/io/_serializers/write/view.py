@@ -20,7 +20,7 @@ def _h5_write_view(
     entries: np.ndarray,
     name: str,
     lh5_file: h5py.File,
-    link_type: Literal[None, "hard", "soft", "external"] = None,
+    link_type: Literal["hard", "soft", "external"] | None = None,
     external_file: str | h5py.File | None = None,
     group: str = "/",
     start_row: int = 0,

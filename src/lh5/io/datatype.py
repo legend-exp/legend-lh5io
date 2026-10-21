@@ -6,6 +6,12 @@ from itertools import permutations as perm
 
 from lgdo import types
 
+
+class View(types.LGDO):
+    # dummy type to identify views
+    pass
+
+
 _lgdo_datatype_map: dict[str, types.LGDO] = OrderedDict(
     [
         (types.Scalar, r"^real$|^bool$|^complex$|^string$"),
@@ -25,6 +31,7 @@ _lgdo_datatype_map: dict[str, types.LGDO] = OrderedDict(
         (types.ArrayOfEqualSizedArrays, r"^array_of_equalsized_arrays<1,1>\{.+\}$"),
         (types.ArrayOfDetectorIDs, r"^array<\d+>\{detectorid\}$"),
         (types.Array, r"^array<\d+>\{.+\}$"),
+        (View, r"^view\{.+\}$"),
     ]
 )
 """Mapping between LGDO types and regular expressions defining the corresponding datatype string."""

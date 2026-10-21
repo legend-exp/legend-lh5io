@@ -132,7 +132,7 @@ def map_lgdo_arrays(
             lgdo = cls(nda=ak_array, attrs=lgdo.attrs)  # might be Array or AoesA
         else:
             msg = "Array-type lgdo cannot be identified"
-            raise RuntimeError(msg)
+            raise TypeError(msg)
         return lgdo
     msg = f"Cannot map LGDO at {name}: {type(lgdo)}"  # e.g. Scalar. Might find a way to treat this.
     raise RuntimeError(msg)

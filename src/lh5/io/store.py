@@ -322,7 +322,7 @@ class LH5Store:
         entries: ArrayLike,
         name: str,
         lh5_file: str | Path | h5py.File,
-        link_type: Literal[None, "hard", "soft", "external"] = None,
+        link_type: Literal["hard", "soft", "external"] | None = None,
         external_file: str | Path | None = None,
         group: str | h5py.Group = "/",
         start_row: int = 0,

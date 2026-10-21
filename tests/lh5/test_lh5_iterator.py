@@ -52,10 +52,10 @@ def test_errors(lgnd_file):
     with pytest.raises(RuntimeError):
         LH5Iterator("non-existent-file.lh5", "random-group")
 
-    with pytest.raises(ValueError):
+    with pytest.raises(TypeError):
         LH5Iterator(1, "gp")
 
-    with pytest.raises(ValueError):
+    with pytest.raises(TypeError):
         LH5Iterator(lgnd_file, 1)
 
     with pytest.raises(ValueError):

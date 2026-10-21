@@ -26,7 +26,7 @@ def read_sigcompress_c_output(filename: str):
     with Path(filename).open() as f:
         nsig_c = int(f.readline())  # first number in the file
         shift = int(f.readline())  # second number in the file
-        for line in f.readlines():  # then the waveform
+        for line in f:  # then the waveform
             enc_wf_c = np.append(enc_wf_c, np.uint16(line))
 
     return (nsig_c, shift, enc_wf_c)

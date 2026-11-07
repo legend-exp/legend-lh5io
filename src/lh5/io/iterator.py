@@ -19,7 +19,9 @@ from hist import Hist, axis
 from lgdo.types import LGDOCollection, Table
 from lgdo.units import default_units_registry as ureg
 from numpy.typing import NDArray
-from rich import console, progress
+from rich import progress
+from rich.console import Console
+from rich.progress import Progress
 
 from .store import LH5Store
 from .utils import expand_path
@@ -1219,7 +1221,7 @@ class LH5Iterator(Iterator):
         executor: Executor = None,
         executor_mode: Literal["process", "thread"] | None = None,
         library: str = None,
-        progress: progress.Progress | console.Console | bool = True,
+        progress: Progress | Console | bool = True,
     ):
         """
         Query the data files in the iterator
@@ -1380,7 +1382,7 @@ class LH5Iterator(Iterator):
         processes: Executor | int = None,
         executor: Executor = None,
         executor_mode: Literal["process", "thread"] | None = None,
-        progress: progress.Progress | console.Console | bool = True,
+        progress: Progress | Console | bool = True,
         **hist_kwargs,
     ) -> Hist:
         """
@@ -1722,8 +1724,8 @@ class MapProgress(Thread):
         self,
         tasks: list | int,
         executor: Executor,
-        prog: progress.Progress | console.Console = None,
-        update_period: float = 0.1,
+        prog: Progress | Console | None = None,
+        update_period: float = 0.25,
     ):
         """
         Parameters
@@ -1736,10 +1738,10 @@ class MapProgress(Thread):
         update_period
             frequency in seconds to update progress bars.
         """
-        if isinstance(prog, progress.Progress):
+        if isinstance(prog, Progress):
             self.progress = prog
         else:
-            self.progress = progress.Progress(
+            self.progress = Progress(
                 progress.TextColumn("{task.description:>5}: {task.fields[status]:<12}"),
                 progress.BarColumn(),
                 progress.TaskProgressColumn(),
@@ -1748,7 +1750,7 @@ class MapProgress(Thread):
                 ),
                 progress.TimeElapsedColumn(),
                 progress.TimeRemainingColumn(compact=True),
-                console=prog if isinstance(prog, console.Console) else None,
+                console=prog if isinstance(prog, Console) else None,
                 auto_refresh=False,
             )
 
